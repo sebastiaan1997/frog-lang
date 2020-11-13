@@ -1,0 +1,94 @@
+\documentclass{report}
+
+
+\begin{document}
+\chapter{Keywords}
+\begin{itemize}
+    \item{let}
+    \item{const}
+    \item{struct}
+    \item{fn}
+    \item{if}
+    \item{when}
+    \item
+\end{itemize}
+
+
+\chapter{Grammar}
+
+\section{Comments}
+\begin{verbatim}
+    // I'm a single line comment
+
+    /*
+     * I'm a multi-line 
+     * comment
+     */
+\end{verbatim}
+
+\section {Variables and constants}
+
+\subsection{Variables}
+\begin{verbatim}
+    let a = 0;
+    let b, c = 1;
+    let d = 2, e = 3;
+\end{verbatim}
+\subsection{Constants}
+Constants are immutable variables.
+\begin{verbatim}
+    const a = 0;
+    const b, c = 1;
+    const d = 2, e = 3;
+\end{verbatim}
+
+
+\section{Flow control}
+
+\subsection{if-statement}
+\begin{verbatim}
+    if a == b {
+        // code...
+    }
+\end{verbatim}
+
+
+\subsection {Pattern match}
+
+\begin{verbatim}
+when x {
+    0 => print("Hello World");
+    1 => print("Hello John");
+}
+\end{verbatim}
+
+
+\subsection{Variable assignment}
+
+\section {typing}
+\subsection {Structs}
+\begin{verbatim}
+struct Structure {
+    a, b: int;
+    c: float;
+}
+\end{verbatim}
+
+\subsection {Enums}
+\begin {verbatim}
+enum Seasons {
+    winter,
+    spring,
+    summer,
+    autumn
+}
+\end {verbatim}
+
+
+
+
+
+
+
+
+\end{document}
