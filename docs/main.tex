@@ -2,20 +2,38 @@
 
 
 \begin{document}
+
+\chapter{Introduction}
+The goal of the language is to write code efficiently and easally while it's still extendable, even at the core language.
+The language is thereby inspired by Rust, C\#, Python and C/C++.
+
+
+
 \chapter{Keywords}
 \begin{itemize}
+    \item{fn}
+    \item{rt}
+    \item{infix}
     \item{let}
     \item{const}
     \item{struct}
-    \item{fn}
     \item{if}
     \item{when}
-    \item
+\end{itemize}
+
+
+
+\chapter{Operators}
+\begin{itemize}
+    \item{+}
+    \item{-}
+    \item{*}
+    \item{/}
+    \item{}
 \end{itemize}
 
 
 \chapter{Grammar}
-
 \section{Comments}
 \begin{verbatim}
     // I'm a single line comment
@@ -23,11 +41,8 @@
     /*
      * I'm a multi-line 
      * comment
-     */
+     */function
 \end{verbatim}
-
-\section {Variables and constants}
-
 \subsection{Variables}
 \begin{verbatim}
     let a = 0;
@@ -68,24 +83,100 @@ when x {
 \section {typing}
 \subsection {Structs}
 \begin{verbatim}
-struct Structure {
-    a, b: int;
-    c: float;
-}
-\end{verbatim}
+    struct Structure {
+        a, b: int;
+        c: float;
+    }
+    \end{verbatim}
 
 \subsection {Enums}
-\begin {verbatim}
-enum Seasons {
-    winter,
-    spring,
-    summer,
-    autumn
-}
-\end {verbatim}
+\begin{verbatim}
+    enum Seasons {
+        winter,
+        spring
+        summer,
+        autumn
+    }
+\end{verbatim}
+
+\section{Literals}
+\subsection {Strings}
 
 
+\section {Routines}
 
+\subsection {Callables}
+Callables are functions or routines that can be called from somewhere else.
+\begin{verbatim}
+    rt print_hello(){
+        print("Hello")
+    }
+
+\end{verbatim}
+\subsection {Functions}
+Functions cannot, so do not have side-effects
+\begin{verbatim}
+    fn sum(lhs: int, rhs: int) {
+        return a + b;
+    }
+
+\end{verbatim}
+
+\subsection{Shorthand notation}
+\begin{verbatim}
+    rt print_hello => print("Hello");
+    fn sum(a: int, b: int) => a + b;
+\end{verbatim}
+
+
+\subsection {Infix}
+\begin{verbatim}
+    infix fn + (a, b)
+\end{verbatim}
+
+
+\chapter{Examples}
+\section{Hello World}
+\begin{verbatim}
+    rt main() => print("Hello World!");
+\end{verbatim}
+
+\section{Operator Overloading}
+Operator overloading can be accheived by defining the operator as an Infix callable.
+\begin{verbatim}
+    struct Vector [int:2];
+    infix fn + (rhs: Vector, lhs: Vector) => [ lhs[0] + rhs[0], lhs[1] + rhs[1] ]
+
+    rt main() {
+        const a = Vector[1, 2];
+        const b = Vector[3, 4];
+        print(a + b); // Vector[4, 6]
+    }
+\end{verbatim}
+
+\section {Custom operators}
+
+\begin{verbatim}
+    infix fn % (rhs: int, lhs: int) => (rhs / lhs) + rhs - (rhs / lhs);
+
+    rt main() {
+        print(5 % 2); // 1
+    }
+\end{verbatim}
+
+
+\section{Member callable declaration}
+
+\begin{verbatim}
+    struct Vector [int:2];
+    member rt Vector::print() => print(print[0], print[1]);
+
+    rt main() {
+        const a = Vector[1, 2];
+        const b = Vector[3, 4];
+        print(a + b); // Vector[4, 6]
+    }
+\end{verbatim}
 
 
 

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9512a771ad2a25fe16fe7cd9dc02759feb91a8323e63f652207f1154943be67b
+-- hash: ee13b2d7936e9db2ad851b74e28ab62d2f3b4e3fd9d8bf4d15319ff5dff353d5
 
 name:           frog-lang
 version:        0.1.0.0
@@ -12,8 +12,8 @@ description:    Please see the README on GitHub at <https://github.com/githubuse
 homepage:       https://github.com/githubuser/frog-lang#readme
 bug-reports:    https://github.com/githubuser/frog-lang/issues
 author:         Author name here
-maintainer:     example@example.com
-copyright:      2020 Author name here
+maintainer:     sebastiaan.saarloos@gmail.com
+copyright:      2020 Sebastiaan Saarloos
 license:        BSD3
 license-file:   LICENSE
 build-type:     Simple
@@ -27,6 +27,7 @@ source-repository head
 
 library
   exposed-modules:
+      Lexer
       Lib
   other-modules:
       Paths_frog_lang
