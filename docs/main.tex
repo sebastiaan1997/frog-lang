@@ -8,22 +8,54 @@ The goal of the language is to write code efficiently and easally while it's sti
 The language is thereby inspired by Rust, C\#, Python and C/C++.
 
 
-
 \chapter{Keywords}
-\begin{itemize}
-    \item{fn}
-    \item{rt}
-    \item{infix}
-    \item{let}
-    \item{const}
-    \item{struct}
-    \item{if}
-    \item{when}
-\end{itemize}
 
+\section{Variables}
+\paragraph{const} Defines a constant
+\paragraph{let} Defines a variable
+
+\section{Flow Control keywords}
+
+\subsection {Conditional}
+
+\paragraph{if} Indicates an if statement
+\paragraph{else} Indicates an else clause of an if statement
+\paragraph{when} Indicates pattern-matching construct
+
+
+
+\subsection{Procedures}
+\paragraph{fn} Function, a pure function, without side-effects
+\paragraph{rt} Routine, a not pure function, may have side-effects
+
+\section{Structures}
+\paragraph{struct} Indicates a datastructure
+\paragraph{enum} Indicates an enumeration
+
+
+\section {Other}
+
+\paragraph{infix} Indicates that a function can be placed between 2 constants or variables.
+\paragraph{assoc} Indicates that a procedure is associated with a structure.
 
 
 \chapter{Operators}
+
+\section{Logical}
+
+\paragraph{$||$} Logical or
+\paragraph{$\&\&$} Logical and
+\paragraph{$!$} not
+\section{Assignment}
+\paragraph{$=$} Assigns a certain value to a variable or constant.
+
+\subsection{Combined}
+
+
+
+
+
+
 \begin{itemize}
     \item{+}
     \item{-}
@@ -75,6 +107,21 @@ when x {
     0 => print("Hello World");
     1 => print("Hello John");
 }
+\end{verbatim}
+
+
+
+\subsection{Veriable declaration}
+
+\begin{verbatim}
+    fn hello(x: isize)
+        const a = when x {
+            0 => "Aap";
+            1 => "Noot";
+            2 => "Mies";
+        }
+        print(a);
+    }
 \end{verbatim}
 
 
@@ -177,9 +224,5 @@ Operator overloading can be accheived by defining the operator as an Infix calla
         print(a + b); // Vector[4, 6]
     }
 \end{verbatim}
-
-
-
-
 
 \end{document}
