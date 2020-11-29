@@ -1,15 +1,11 @@
-module Lexer(lexFrog,FrogToken(..)) where
-
+module Lexer(lexFrog,FrogToken(..),Keyword(..)) where
 import Data.Char (isDigit, isSpace)
 
-
-
-data FrogToken = Identifier String | DigitLiteral String | StringLiteral String | Keyword String | Other Char | Operator String | SLComment String | MLComment String | DocComment String | BlockOpen Char  | BlockClose Char | None
+data Keyword = Const | Let | Fn | Rt | If | Else | When | Struct | Enum | Infix | Assoc | Return
     deriving (Eq, Show)
 
-
-
-
+data FrogToken = Identifier String | DigitLiteral String | StringLiteral String | Keyword Keyword | Other Char | Operator String | SLComment String | MLComment String | DocComment String | BlockOpen Char | BlockClose Char | None | Endf
+    deriving (Eq, Show)
 
 blockOpen :: [Char]
 blockOpen = "{[("
@@ -18,7 +14,7 @@ isBlockOpen :: Char -> Bool
 isBlockOpen ch = ch `elem` blockOpen
 
 blockClose :: [Char]
-blockClose = ")]}"
+blockClose = "}])"
 
 isBlockClose :: Char -> Bool
 isBlockClose ch = ch `elem` blockClose
@@ -27,16 +23,36 @@ operators :: String
 operators = "+-*/^&%!~="
 
 keywords :: [ String ]
-keywords = [ "const", "let", "fn", "rt"]
+keywords = [ "const", "let", "fn", "rt", "if", "else", "when", "struct", "enum", "infix", "assoc", "return"]
+
+
+toKeyword :: String -> Maybe Keyword
+toKeyword "const" = Just Const
+toKeyword "let" = Just Let
+toKeyword "fn" = Just Fn
+toKeyword "rt" = Just Rt
+toKeyword "if" = Just If
+toKeyword "else" = Just Else
+toKeyword "when" = Just When
+toKeyword "struct" = Just Struct
+toKeyword "enum" = Just Enum
+toKeyword "infix" = Just Infix
+toKeyword "assoc" = Just Assoc
+toKeyword "return" = Just Return
+toKeyword _ = Nothing
+
+
 
 
 isOperator :: Char -> Bool
 isOperator ch = ch `elem` operators
 
 isKeyword :: String -> Bool
-isKeyword str = str `elem` keywords
+isKeyword str = case toKeyword str of Nothing -> False; _ -> True;
 
-
+isAcceptableIdentifier :: Char -> Bool
+isAcceptableIdentifier ';' = False
+isAcceptableIdentifier ch = not(isOperator ch) && not(isBlockOpen ch) &&  not(isBlockClose ch)
 
 
 lexOperator :: String -> String -> [ FrogToken ]
@@ -61,8 +77,11 @@ lexString (x : xs) buffer = lexString xs (buffer ++ [x])
 lexIdentifier :: String -> String -> [FrogToken]
 lexIdentifier [] [] = []
 lexIdentifier [] buffer = [ Identifier buffer ]
-lexIdentifier (x : xs) buffer | isSpace x = Identifier buffer : lexFrog xs
-lexIdentifier (x : xs) buffer | isSpace x && isKeyword buffer = Identifier buffer : lexFrog xs
+lexIdentifier (x : xs) buffer | isSpace x || not(isAcceptableIdentifier x) = case keyword of 
+    Nothing -> Identifier buffer : lexFrog (x:xs)
+    Just kw -> Keyword kw : lexFrog (x:xs)
+    where keyword = toKeyword buffer;
+
 lexIdentifier (x : xs) buffer = lexIdentifier xs (buffer ++ [x])
 
 
@@ -80,13 +99,17 @@ lexDocComment (x : xs) buffer = lexDocComment xs (buffer ++ [x])
 
 lexFrog :: String -> [ FrogToken ]
 lexFrog [] = []
+lexFrog (';' : xs) = Other ';' : lexFrog xs
 lexFrog ('/' : '/' : xs) = lexSLComment xs ""
 lexFrog ('/' : '*' : '*' : xs) = lexDocComment xs ""
 lexFrog ('/' : '*' : xs) = lexMLComment xs ""
+lexFrog (x : xs) | isBlockOpen x =  BlockOpen x : lexFrog xs
+lexFrog (x : xs) | isBlockClose x  = BlockClose x : lexFrog xs
 lexFrog (x : xs) | isSpace x = lexFrog xs
 lexFrog (x : xs) | isDigit x = lexDigit (x : xs) ""
 lexFrog (x : xs) | isOperator x = lexOperator xs [x]
-lexFrog (x : xs) | isBlockOpen x =  BlockOpen x : lexFrog xs
-lexFrog (x : xs) | isBlockClose x  = BlockClose x : lexFrog xs
+
 lexFrog ('"' : xs) = lexString xs ""
 lexFrog (x : xs) = lexIdentifier (x : xs) ""
+lexFrog [] = [ Endf ]
+lexFrog list = [ None ]

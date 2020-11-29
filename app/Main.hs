@@ -1,9 +1,17 @@
 module Main(main) where
 
 import Lexer 
+import Parser
 
 
+
+statement :: String
+statement = "const name = \"Sebastiaan\"; print(name); return name;"
 
 main :: IO ()
-main = print (Lexer.lexFrog "// This is a name assignment \n const name = \"Sebastiaan\" ")
-
+main = do {
+        print tokenStream;
+        print ast
+    }
+    where tokenStream = Lexer.lexFrog statement; ast = Parser.parse tokenStream
+    
