@@ -4,14 +4,10 @@ import Lexer
 import Parser
 
 
-
-statement :: String
-statement = "const name = \"Sebastiaan\"; print(name); return name;"
-
 main :: IO ()
-main = do {
-        print tokenStream;
-        print ast
+main = 
+    do {
+        contents <- readFile "main.fg";
+        print (Parser.parse  (Lexer.lexFrog contents))
     }
-    where tokenStream = Lexer.lexFrog statement; ast = Parser.parse tokenStream
-    
+

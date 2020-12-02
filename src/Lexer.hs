@@ -1,10 +1,10 @@
 module Lexer(lexFrog,FrogToken(..),Keyword(..)) where
 import Data.Char (isDigit, isSpace)
 
-data Keyword = Const | Let | Fn | Rt | If | Else | When | Struct | Enum | Infix | Assoc | Return
+data Keyword = Const | Let | Fn | Rt | If | Else | When | Struct | Enum | Infix | Assoc | Return | While | For | Break | Continue
     deriving (Eq, Show)
 
-data FrogToken = Identifier String | DigitLiteral String | StringLiteral String | Keyword Keyword | Other Char | Operator String | SLComment String | MLComment String | DocComment String | BlockOpen Char | BlockClose Char | None | Endf
+data FrogToken = Identifier String | DigitLiteral String | StringLiteral String | Keyword Keyword | Other Char | Operator String | SLComment String | MLComment String | DocComment String | BlockOpen Char | BlockClose Char | None | Endf | Accessor String
     deriving (Eq, Show)
 
 blockOpen :: [Char]
@@ -39,6 +39,8 @@ toKeyword "enum" = Just Enum
 toKeyword "infix" = Just Infix
 toKeyword "assoc" = Just Assoc
 toKeyword "return" = Just Return
+toKeyword "while" = Just While
+toKeyword "for" = Just For
 toKeyword _ = Nothing
 
 
@@ -99,6 +101,9 @@ lexDocComment (x : xs) buffer = lexDocComment xs (buffer ++ [x])
 
 lexFrog :: String -> [ FrogToken ]
 lexFrog [] = []
+lexFrog ('.' : '.' : xs) = Operator ".." : lexFrog xs
+lexFrog ('.' : xs) = Accessor "." : lexFrog xs
+
 lexFrog (';' : xs) = Other ';' : lexFrog xs
 lexFrog ('/' : '/' : xs) = lexSLComment xs ""
 lexFrog ('/' : '*' : '*' : xs) = lexDocComment xs ""
