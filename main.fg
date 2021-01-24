@@ -1,4 +1,13 @@
+
+
 rt main() {
-    print("Hello World!");
+    let condition = true;
+    let i = 0;
+    if(condition){
+        print_hello();
+        while (i < 1000000){
+            i++;
+        }
+    }
     return 0;
 }

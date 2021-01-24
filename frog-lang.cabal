@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 4dbf4c20fdd74c7be753340e3fa057722c537f132eb0d9a6ba43ee604b58d208
+-- hash: 054201b27e57650233a52c98dd38139c3417f6d08fe9142add522042988eeb03
 
 name:           frog-lang
 version:        0.1.0.0
@@ -27,17 +27,20 @@ source-repository head
 
 library
   exposed-modules:
+      Compiler
       Executor
       Lexer
       Lib
       ListTools
       Parser
+      Result
   other-modules:
       Paths_frog_lang
   hs-source-dirs:
       src
   build-depends:
       base >=4.7 && <5
+    , containers >=6.0
   default-language: Haskell2010
 
 executable frog-lang-exe
@@ -49,6 +52,7 @@ executable frog-lang-exe
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , containers >=6.0
     , frog-lang
   default-language: Haskell2010
 
@@ -62,5 +66,6 @@ test-suite frog-lang-test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , containers >=6.0
     , frog-lang
   default-language: Haskell2010

@@ -4,10 +4,8 @@ module Executor(execute) where
   import qualified Lexer as L
   import qualified Parser as P
   import Result(Result(..), isSuccess, isUnimplemented, isError, isWarning, mapSuccess, unwrapResult, mapIOSuccess, unwrapIOResult)
-  import Debug.Trace (trace, traceShow)
+  import Debug.Trace ( trace, traceShow )
   import Control.Monad(mapM)
-
-
 
   -- Implementation for printing from Froglang
   nativePrint :: Context -> IO (Result (Context, Value))
@@ -75,8 +73,6 @@ module Executor(execute) where
       lhs = getVariable ctx "lhs"
       rhs = getVariable ctx "rhs"
 
-
-  -- |Implementation of the default native funcitons.
   defaultFunctions :: M.Map String Callable
   defaultFunctions = M.fromList [
     ("print", NativeRoutine{functionName="print", functionParams=[Variable{name="str", typename="String",value=Uninitialized}], targetRoutine=nativePrint})
@@ -286,8 +282,8 @@ module Executor(execute) where
   createContext (P.Sequence children) = foldl1 (\ lhs rhs -> unwrapResult( mapSuccess (\l -> mapSuccess (\r -> mergeContexts l r) rhs) lhs )) ctxs
     where ctxs = map createContext children
 
-  --createContext (P.StructDefinition{P.name=n,P.fields=f}) = Success emptyContext{structs=M.fromList [(n, Struct{structName=n, fields=M.fromList fieldMap, assocFunctions=M.empty})]}
-  --  where fieldMap = map (\x -> (P.name x, Variable{name=P.name x, typename=P.typename x, value=Uninitialized} )) f
+  createContext (P.StructDefinition{P.name=n,P.fields=f}) = Success emptyContext{structs=M.fromList [(n, Struct{structName=n, fields=M.fromList fieldMap, assocFunctions=M.empty})]}
+    where fieldMap = map (\x -> (P.name x, Variable{name=P.name x, typename=P.typename x, value=Uninitialized} )) f
 
   createContext node = Error ("Could not index element: " ++ show node)
 
@@ -354,8 +350,11 @@ module Executor(execute) where
       Warning ((Context{returnContext=Just rctx}, v), msg) -> Warning((rctx, v), msg)
       Error msg -> Error msg
       Unimplemented msg -> Unimplemented msg 
-      otherwise -> Error ("Return context not available in scope ")  
+      otherwise -> Error ("Return context not available in scope ") 
+      
     )
+    -- return (mapSuccess(\res -> (returnContext (fst res), snd res)) result)
+
   }
     where
       function      = getFunction ctx name args
@@ -383,9 +382,3 @@ module Executor(execute) where
       -- print(result)
     }
     where ctxResult = createContext node
-
-
-  
-
-
-  

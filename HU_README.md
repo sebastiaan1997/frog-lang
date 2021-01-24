@@ -1,7 +1,8 @@
 # frog-lang
-
+Ik ben trots om te vermelden dat ik een programmeertaal heb ontwikkeld en heb gerealiseerd in Haskell, een taal waar ik tot heden geen ervaring mee had.
 ## Turing compleet
-Mijn taal is turingcompleet
+Mijn taal is turingcompleet omdat:
+
 
 # Gekozen taal
 Froglang, zelf ontwikkeld, geschreven in haskell.
