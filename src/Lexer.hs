@@ -5,7 +5,7 @@ import Data.Char (isDigit, isSpace)
 data Keyword = Const | Let | Fn | Rt | If | Else | When | Struct | Enum | Infix | Assoc | Return | While | For | Break | Continue | TrueVal | FalseVal
     deriving (Eq, Show)
 -- | Definition of the type of the tokens
-data FrogToken = Identifier String | DigitLiteral Float | StringLiteral String | Keyword Keyword | Other Char | Operator String | SLComment String | MLComment String | DocComment String | BlockOpen Char | BlockClose Char | None | Endf | Accessor String
+data FrogToken = Identifier String | IntegerLiteral Int | DigitLiteral Float | StringLiteral String | Keyword Keyword | Other Char | Operator String | SLComment String | MLComment String | DocComment String | BlockOpen Char | BlockClose Char | None | Endf | Accessor String
     deriving (Eq, Show)
 
 -- | Definition of the characters that may open a code block
@@ -100,10 +100,20 @@ lexDigit :: String -> String -> [ FrogToken ]
 -- If both buffers are empty, return an empty buffer.
 lexDigit [] [] = []
 -- Assume that if the input is empty, the given buffer contains the digit that shall be returned.
-lexDigit [] buffer = [ DigitLiteral (read buffer :: Float) ]
+lexDigit [] buffer 
+    | '.' `elem` buffer = [ DigitLiteral (read buffer :: Float) ]
+    | otherwise = [ IntegerLiteral (read buffer :: Int) ]
+    
 -- As long as the character is an operator, append to the buffer.
-lexDigit (x: xs) buffer | isDigit x = lexDigit xs (buffer ++ [x])
-lexDigit (x: xs) buffer = DigitLiteral (read buffer :: Float) : lexFrog (x:xs)
+lexDigit (x: xs) buffer 
+    | isDigit x || x `elem` ".,"  = lexDigit xs (buffer ++ [x])
+    | '.' `elem` buffer = DigitLiteral (read buffer :: Float) : lexFrog (x : xs)
+    | otherwise = IntegerLiteral (read buffer :: Int) : lexFrog (x : xs)
+-- lexDigit (x: xs) buffer
+    
+    
+    
+    -- DigitLiteral (read buffer :: Float) : lexFrog (x:xs)
 
 lexString :: String -> String -> [ FrogToken ]
 lexString [] [] = []
@@ -147,13 +157,13 @@ lexFrog ('/' : '*' : xs) = lexMLComment xs ""
 
 lexFrog ('"' : xs) = lexString xs ""
 lexFrog (x : xs)
-  | isBlockOpen x =  BlockOpen x : lexFrog xs -- If the character is a block opening character, convert it to an block open token.
-  | isBlockClose x  = BlockClose x : lexFrog xs -- If the character is a closing block character, convert it to a block close token.
-  | isSpace x = lexFrog xs -- If the character is a space, skip.
-  | isDigit x = lexDigit (x : xs) "" -- If the character is a digit, then try to read the rest of the digit.
-  | isOperator x = lexOperator xs [x] -- If the character is an operator, try to read the rest of the operator.
-  | isAcceptableIdentifier x = lexIdentifier (x : xs) "" -- If the character might be an identifier, try to read it as an identifier or keyword.
-  | otherwise = Other x : lexFrog xs -- If no match is found, place it in the "other" bucket.
+    | isBlockOpen x =  BlockOpen x : lexFrog xs -- If the character is a block opening character, convert it to an block open token.
+    | isBlockClose x  = BlockClose x : lexFrog xs -- If the character is a closing block character, convert it to a block close token.
+    | isSpace x = lexFrog xs -- If the character is a space, skip.
+    | isDigit x = lexDigit (x : xs) "" -- If the character is a digit, then try to read the rest of the digit.
+    | isOperator x = lexOperator xs [x] -- If the character is an operator, try to read the rest of the operator.
+    | isAcceptableIdentifier x = lexIdentifier (x : xs) "" -- If the character might be an identifier, try to read it as an identifier or keyword.
+    | otherwise = Other x : lexFrog xs -- If no match is found, place it in the "other" bucket.
 
 
 lexFrog [] = [ Endf ]

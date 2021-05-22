@@ -1,5 +1,7 @@
-module Parser(parse, FrogNode(..), groupBlocks) where
+{-# LANGUAGE LambdaCase #-}
+module Parser(parse, groupBlocks) where
   import qualified Data.Map as M
+  import qualified Ast as A
 
   import qualified Lexer as L
 
@@ -14,57 +16,9 @@ module Parser(parse, FrogNode(..), groupBlocks) where
   closing '[' = ']'
   closing _ = '\0'
 
-  data FrogNode = Sequence [FrogNode]
-      
-      | Token L.FrogToken -- A single token as parsed by the lexer.
-      | ConstDeclaration { name :: String, assignment :: FrogNode, typename :: String } -- The declaration of a constant.
-      | VarDeclaration { name :: String, assignment :: FrogNode, typename :: String } -- The declaration of a variable.
-      | FieldDefinition { name :: String, typename :: String } -- The definition of a field inside a struct.
-      | ParameterDefinition { name :: String, typename :: String } -- The definition of a parameter of a method, function or routine.
-      | ParameterList [FrogNode] -- The list of parameters associated with a function.
-      | ArrayDefinition [FrogNode] -- The definition of an array or list.
-      | RoutineDefinition { name :: String, params :: [FrogNode], body :: [FrogNode] } -- The definition of a routine in code.
-      | FunctionDefinition { name :: String, params :: [FrogNode], body :: [FrogNode] } -- The definition of a function in code
-      | StructInstance { name :: String, fields :: [FrogNode] } -- The definition of the instanciation of a struct NOT IMPLEMENTED.
-      | Variable { name :: String } -- Variable or constant.
-      | BooleanLiteral Bool
-      | NumericLiteral Float
-      | StringLiteral String
-      | ChildAccessor { parent :: FrogNode, child :: FrogNode, accessor :: String } -- The . accessor.
-      | FunctionCall { target :: String, params :: [FrogNode] } -- The call of a function.
-      | Assignment { name :: String, assignment :: FrogNode } -- The assignment of an variable in the name segment of the data.
-      | Block {open :: Char, childs :: [FrogNode], close :: Char } -- A scope, structured as a block in code, seems like (...) {...} or [...].
-      | InfixCall { lhs :: FrogNode, function :: String, rhs :: FrogNode } -- The infix notation of a function call. Is also used for operator operations.
-      | SelfAssigningInfixCall { lhs :: FrogNode, function :: String, rhs :: FrogNode } -- Self assigning operator, like +=, -= or even ++ and --;
-      | InfixDecorator FrogNode -- Not implemented
-      | WhenStatement { input :: FrogNode } -- Not implemented
-      | List [ FrogNode ] -- Not implemented
-      | TokenStream [L.FrogToken] -- Not implemented
-      | Statement FrogNode -- A single statement in code.
-      | FunctionReturn FrogNode -- Ends the execution of a function and returns a given value, variable or constant.
-      | IfStatement { condition :: FrogNode, body :: [FrogNode], next :: Maybe FrogNode } -- And if statement. next is else (due to keyword reservations in haskell).
-      | WhileStatement { condition :: FrogNode, body :: [FrogNode] } -- A while statement.
-      | ParseError { message :: String, node :: Maybe FrogNode } -- Gives an error.
-      | Dict (M.Map String FrogNode) -- A dictionary
-      | Nop -- A non operation.
-      deriving(Show, Eq)
-
 
   -- | Appends a node to a list of nodes. Combines two or more nodes.
-  append :: FrogNode -> FrogNode -> FrogNode 
-  append lhs rhs = case (lhs, rhs) of
-    (Block{}, Block{}) -> Sequence [lhs, rhs] -- Two blocks will be combined to a sequence of two blocks.
-    (Token _, Token _) -> Sequence [lhs, rhs] -- Two tokens will be conbined to a sequence of two tokens
-    (Token _, Block{}) -> Sequence [lhs, rhs] -- A token and a block will be combined to a sequence of a token and a block.
-    (Block{}, Sequence s) -> Sequence(lhs : s) -- A block and a sequence will be combined to a block appended in the sequence.
-    (Block{}, rhs) -> lhs{childs=(childs lhs) ++ [rhs]} -- The block will be combined to 
-    (TokenStream str, Token t) -> TokenStream(str ++ [t]) -- Tokens will be appended to a tokenstream
-    (Sequence l, Sequence r) -> Sequence(l ++ r) -- 
-    ((Sequence seq), _) -> Sequence(seq ++ [rhs])
-    (_, (Sequence seq)) -> Sequence(lhs : seq)
-    (_, Nop) -> lhs
-    (Nop, _) -> rhs
-    otherwise -> Sequence[lhs, rhs]
+
 
 
 
@@ -83,151 +37,193 @@ module Parser(parse, FrogNode(..), groupBlocks) where
   -- append lhs Nop = lhs
   -- append Nop rhs = rhs
 
+  groupBlocksImpl :: [(Char, [A.FrogNode], Char)] -> L.FrogToken -> [(Char, [A.FrogNode], Char)]
+  groupBlocksImpl stack (L.BlockOpen o) = (o, [], closing o) : stack
+  groupBlocksImpl ((o, ch, c) : (po, pch, pc) : xs) bcl@(L.BlockClose newToken)
+    | c == newToken = (po, pch ++ [A.Block{A.open=o, A.childeren=ch, A.close=c}], pc) : xs
+    | otherwise = [('!', [A.ParseError{A.message ="[groupBlocksImpl] No matching block close " ++ [c], A.node = Just (A.Token bcl)}], '!')]
 
-  -- append lhs rhs = Sequence [lhs, rhs]
-
-  -- | 
-  groupBlocks :: [L.FrogToken] -> Maybe Char -> ([L.FrogToken], FrogNode)
-  groupBlocks (L.BlockOpen open : L.BlockClose close: xs) char | close == closing open =  (buffer, append (Block{open=open, childs=[], close=close}) next)
-      where (buffer, next) = groupBlocks xs char
-
-  groupBlocks (L.BlockOpen ch : xs) closeCh = case node of
-      Sequence [Sequence x] ->  (resultBuffer, append (Block{open=ch, childs=x
-        ,close=c}) nextNode)
-      Sequence x -> (resultBuffer, append (Block{open=ch, childs=x,close=c}) nextNode)-- append Block(BlockOpen ch, s, close) nextNode)
-      _ -> do {  (next, node) }
-      where (L.BlockClose c: next, node) = groupBlocks xs (Just (closing ch)); (resultBuffer, nextNode) = groupBlocks next closeCh
+  groupBlocksImpl ((o, ch, c): xs) t = (o, ch ++ [A.Token t] , closing o) : xs
 
 
-  groupBlocks (L.BlockClose ch: xs) (Just closeCh) | ch /= closeCh = (L.BlockClose ch: xs, Nop)
-  groupBlocks (L.BlockClose ch: xs) _ = (L.BlockClose ch:xs,Sequence [])
-  groupBlocks [last] _ = ([], Token last)
-  groupBlocks (x: xs) closeCh = (next, append (Token x) res )
-      where (next, res) = groupBlocks xs closeCh
-  groupBlocks [] Nothing = ([], Nop)
-  groupBlocks tokens closeCh = (tokens, Nop)
+  groupBlocks :: [L.FrogToken] -> A.FrogNode
+  groupBlocks tokens =  A.Sequence res
+    where [ (_, res, _) ] =  foldl groupBlocksImpl [('\0', [], '\0')] tokens
 
 
-  parseList :: FrogNode -> Result [FrogNode]
-  parseList (Statement s) = parseList s
-  parseList (Sequence seq) = Success seq
+
+  -- groupBlocks :: [L.FrogToken] -> Maybe Char -> Either ([L.FrogToken], A.FrogNode) String
+  -- groupBlocks [] _ = Nothing
+  -- groupBlocks (L.BlockOpen o: xs) search = groupBlocks xs (Just (closing o))
+  -- groupBlocks (L.BlockClose c: xs) Just search
+  -- | c == search = Left (xs, )
+  -- | otherwise = Right "Searched " ++ [search] ++ " found " ++ [ c ]
+
+
+
+  -- groupBlocks (L.BlockOpen open : L.BlockClose close: xs) char | close == closing open =  (buffer, A.append (A.Block{A.open=open, A.childeren=[], A.close=close}) next)
+  --     where (buffer, next) = groupBlocks xs char
+
+  -- groupBlocks (L.BlockOpen ch : xs) closeCh = case node of
+  --     A.Sequence [A.Sequence x] ->  (resultBuffer, A.append (A.Block{A.open=ch, A.childeren=x, A.close=c}) nextNode)
+  --     A.Sequence x -> (resultBuffer, A.append (A.Block{A.open=ch, A.childeren=x, A.close=c}) nextNode)-- append Block(BlockOpen ch, s, close) nextNode)
+  --     _ -> case next of 
+  --       Just n -> (n, node)
+  --       _ -> ([], node)
+  --     where 
+
+
+
+
+
+
+
+  --       (L.BlockClose c, next, node) = case groupBlocks xs (Just (closing ch)) of 
+  --         (L.BlockClose c: ne, no) -> (L.BlockClose c, Just ne, no)
+  --         ([L.BlockClose c], no) -> (L.BlockClose c, Nothing, no)
+  --         (unmatch, no) -> traceShow "!!ERROR!!" (traceShow ch  (traceShow unmatch (L.BlockClose '}', Nothing, no)))
+
+  --       (resultBuffer, nextNode) = case next of
+  --         Just n -> groupBlocks n closeCh
+  --         otherwise -> ([], node )
+
+
+  -- groupBlocks (L.BlockClose ch: xs) (Just closeCh) | ch /= closeCh = (L.BlockClose ch: xs, A.Nop)
+  -- groupBlocks (L.BlockClose ch: xs) _ = (L.BlockClose ch:xs, A.Sequence [])
+  -- groupBlocks [last] _ = ([], A.Token last)
+  -- groupBlocks (x: xs) closeCh = (next, A.append (A.Token x) res )
+  --     where (next, res) = groupBlocks xs closeCh
+  -- groupBlocks [] Nothing = ([], A.Nop)
+  -- groupBlocks tokens closeCh = (tokens, A.Nop)
+
+
+  parseList :: A.FrogNode -> Result [A.FrogNode]
+  parseList (A.Statement s) = parseList s
+  parseList (A.Sequence seq) = Success seq
   parseList list = Error "Failed to parse list"
 
-  parseArgs :: [FrogNode] -> [FrogNode]
-  parseArgs seq = map buildTree (map Sequence splitted)
+  parseArgs :: [A.FrogNode] -> [A.FrogNode]
+  parseArgs seq = map (buildTree . A.Sequence) splitted
     where
-      splitted = splitWhen (\x -> case x of Token(L.Other ',') -> True; otherwise -> False) seq
+      splitted = splitWhen (\case A.Token(L.Other ',') -> True; _ -> False) seq
   -- parseArgs node = []
 
 
 
-  groupStatements :: FrogNode -> FrogNode
-  groupStatements (Sequence []) = Sequence []
-  groupStatements Block {open=open, childs=[], close=close} = Block{open=open, childs=[], close=close}
+  groupStatements :: A.FrogNode -> A.FrogNode
+  groupStatements (A.Sequence []) = A.Sequence []
+  groupStatements A.Block {A.open=open, A.childeren=[], A.close=close} = A.Block{A.open=open, A.childeren=[], A.close=close}
 
-  groupStatements (Block{open=open, childs=children, close=close}) = case newChildren of
-      Sequence seq -> Block{open=open, childs=seq, close=close}
-      otherwise -> Block{open=open, childs=[newChildren], close=close}
-      where newChildren = groupStatements (Sequence children)
+  groupStatements A.Block{A.open=open, A.childeren=children, A.close=close} = case newChildren of
+      A.Sequence seq -> A.Block{A.open=open, A.childeren=seq, A.close=close}
+      _ -> A.Block{A.open=open, A.childeren=[newChildren], A.close=close}
+      where newChildren = groupStatements (A.Sequence children)
 
-  groupStatements Nop = Nop
-  groupStatements (Sequence seq) = case newSeq of
-      [Statement(Sequence [n])] -> Statement n
-      otherwise -> foldl1 append newSeq
+  groupStatements A.Nop = A.Nop
+  groupStatements (A.Sequence seq) = case newSeq of
+      [A.Statement(A.Sequence [n])] -> A.Statement n
+      _ -> foldl1 A.append newSeq
       where
-        newSeq  =  map (Statement . Sequence) (splitWhen (== Token( L.Other ';')) (map groupStatements seq))
+        newSeq  =  map (A.Statement . A.Sequence) (splitWhen (== A.Token( L.Other ';')) (map groupStatements seq))
 
 
 
-  groupStatements (Token t) = Token t
-  groupStatements node = Nop
+  groupStatements (A.Token t) = A.Token t
+  groupStatements node = A.Nop
 
-  parseStruct :: [FrogNode] -> [FrogNode]
-  parseStruct (Token(L.Identifier n) : Token(L.Other ':') : Token(L.Identifier tn) : Token(L.Other ',') : xs) = FieldDefinition{name=n, typename=tn} : parseStruct xs
-  parseStruct ( [Token(L.Identifier n), Token(L.Other ':') , Token(L.Identifier tn)]) = [FieldDefinition{name=n, typename=tn}]
+  parseStruct :: [A.FrogNode] -> [A.FrogNode]
+  parseStruct (A.Token(L.Identifier n) : A.Token(L.Other ':') : A.Token(L.Identifier tn) : A.Token(L.Other ',') : xs) = A.FieldDefinition{A.name=n, A.typename=tn} : parseStruct xs
+  parseStruct [A.Token(L.Identifier n), A.Token(L.Other ':') , A.Token(L.Identifier tn)] = [A.FieldDefinition{A.name=n, A.typename=tn}]
   parseStruct [] = []
-  parseStruct n = [ParseError{message="Failed to parse struct", node=Just (Sequence n)}]
+  parseStruct n = [A.ParseError{A.message="Failed to parse struct", A.node=Just (A.Sequence n)}]
 
   -- parseFunctionBody :: FrogNode -> Result FrogNode
   -- parseFunctionBody (Block functionBody) = Success Nop
   -- parseFunctionBody _ = Error "Cannot parse functionbody with given type"
 
 
-  buildTree :: FrogNode -> FrogNode
-  buildTree (Sequence[Sequence seq]) = buildTree (Sequence seq)
-  buildTree (Sequence(Token(L.Identifier n): Token(L.Operator("=")) : rhsValue)) = Assignment{name=n, assignment=(buildTree (Sequence rhsValue))}
-  buildTree (Sequence(Token(L.Identifier lhsValue): Token(L.Operator(op)) : rhsValue))
-    | op `elem` ["++", "--", "+=", "-=", "*=", "/="] = SelfAssigningInfixCall{lhs=Variable lhsValue, function=op, rhs = (buildTree (Sequence rhsValue))}
-    | otherwise = InfixCall{lhs=Variable lhsValue, function=op, rhs = (buildTree (Sequence rhsValue))}
+  buildTree :: A.FrogNode -> A.FrogNode
+  buildTree (A.Sequence[A.Sequence seq]) = buildTree (A.Sequence seq)
+  buildTree (A.Sequence(A.Token(L.Identifier n): A.Token(L.Operator "=") : rhsValue)) = A.Assignment{A.target=n, A.assignment=buildTree (A.Sequence rhsValue)}
+  buildTree (A.Sequence[A.Token(L.Identifier var), A.Token(L.Operator "++")]) = A.Increment (A.Variable var)
+  buildTree (A.Sequence[A.Token(L.Identifier var), A.Token(L.Operator "--")]) = A.Decrement (A.Variable var)
+
+  buildTree (A.Sequence(A.Token(L.Identifier lhsValue): A.Token(L.Operator op) : rhsValue))
+    | op `elem` ["+=", "-=", "*=", "/="] = A.SelfAssigningInfixCall{A.lhs=A.Variable lhsValue, A.target=op, A.rhs = buildTree (A.Sequence rhsValue)}
+    | otherwise = A.InfixCall{A.lhs=A.Variable lhsValue, A.target=op, A.rhs = buildTree (A.Sequence rhsValue)}
 
 
-  buildTree (Statement (Sequence seq)) = Statement(buildTree (Sequence seq))
+  buildTree (A.Statement (A.Sequence seq)) = A.Statement(buildTree (A.Sequence seq))
 
 
 
-  buildTree (Sequence (Token (L.Keyword L.Infix): xs)) = InfixDecorator next
-      where next = buildTree (Sequence xs)
+  buildTree (A.Sequence (A.Token (L.Keyword L.Infix): xs)) = A.InfixDecorator next
+      where next = buildTree (A.Sequence xs)
 
-  buildTree (Sequence ((Token (L.Keyword L.TrueVal)): xs))  = append ((BooleanLiteral True))  (buildTree (Sequence xs))
-  buildTree (Sequence ((Token (L.Keyword L.FalseVal)): xs)) = append ((BooleanLiteral False)) (buildTree (Sequence xs))
+  buildTree (A.Sequence ((A.Token (L.Keyword L.TrueVal)): xs))  = A.append (A.BooleanLiteral True)  (buildTree (A.Sequence xs))
+  buildTree (A.Sequence ((A.Token (L.Keyword L.FalseVal)): xs)) = A.append (A.BooleanLiteral False) (buildTree (A.Sequence xs))
 
-  buildTree (Sequence (Token(L.Keyword keyword) : Token(L.Identifier id) : Token(L.Operator "=") : xs))
-      | keyword == L.Const = ConstDeclaration{name=id,assignment=child,typename=""}
-      | keyword == L.Let   = VarDeclaration{name=id, assignment=child, typename=""}
-      where child = buildTree (Sequence xs)
+  buildTree (A.Sequence (A.Token(L.Keyword keyword) : A.Token(L.Identifier id) : A.Token(L.Operator "=") : xs))
+      | keyword == L.Const = A.ConstDeclaration{A.name=id, A.assignment=child, A.typename=""}
+      | keyword == L.Let   = A.VarDeclaration{A.name=id, A.assignment=child, A.typename=""}
+      where child = buildTree (A.Sequence xs)
 
-  buildTree (Sequence (Token(L.Keyword keyword): (Token(L.Identifier n)) : Block{open='(',childs=params,close=')'} : Block{open='{',childs=body,close='}'} : xs))
+  buildTree (A.Sequence (A.Token(L.Keyword keyword): (A.Token(L.Identifier n)) : A.Block{A.open='(', A.childeren=params, A.close=')'} : A.Block{A.open='{', A.childeren=body, A.close='}'} : xs))
       | keyword == L.Fn = case b of
-        Sequence seq -> append FunctionDefinition {name=n,params=parseArgs params, body= seq } (buildTree (Sequence xs))
-        otherwise -> append FunctionDefinition {name=n,params=parseArgs params, body=[b]} (buildTree (Sequence xs))
+        A.Sequence seq -> A.append A.FunctionDefinition {A.name=n,A.params=parseArgs params, A.body= seq } (buildTree (A.Sequence xs))
+        _ -> A.append A.FunctionDefinition {A.name=n, A.params=parseArgs params, A.body=[b]} (buildTree (A.Sequence xs))
       | keyword == L.Rt = case b of
-        Sequence seq -> append RoutineDefinition {name=n,params=parseArgs params, body= seq } (buildTree (Sequence xs))
-        otherwise -> append RoutineDefinition {name=n,params=parseArgs params, body=[b]} (buildTree (Sequence xs))
-      where b = buildTree(Sequence body)
+        A.Sequence seq -> A.append A.RoutineDefinition { A.name=n, A.params=parseArgs params, A.body= seq } (buildTree (A.Sequence xs))
+        _ -> A.append A.RoutineDefinition { A.name=n, A.params=parseArgs params, A.body=[b]} (buildTree (A.Sequence xs))
+      where b = buildTree(A.Sequence body)
 
-  buildTree (Sequence [Token(L.Keyword keyword)])
-      | keyword == L.Return = FunctionReturn Nop
+  buildTree (A.Sequence [A.Token(L.Keyword keyword)])
+      | keyword == L.Return = A.FunctionReturn Nothing
 
-  buildTree (Sequence (Token(L.Keyword  keyword) : xs))
-      | keyword == L.Return = FunctionReturn( buildTree (Sequence xs))
-
-
-  buildTree (Block{open=o, childs=ch, close=c}) = case newChildren of
-    Sequence seq -> Block{open=o, childs=seq, close=c}
-    otherwise -> Block{open=o, childs=[newChildren], close=c}
-    where newChildren = buildTree (Sequence ch)
-
-  buildTree (Sequence(Token(L.Identifier ident) : Block{open='(', childs=p, close=')'} : xs)) = append FunctionCall{target=ident, params= parseArgs p} (buildTree (Sequence xs))
-  buildTree (Sequence []) = Nop
-
-  buildTree Nop = Nop
-  buildTree (Sequence(Statement s : xs)) = append (buildTree s) (buildTree (Sequence xs))
+  buildTree (A.Sequence (A.Token(L.Keyword  keyword) : xs))
+      | keyword == L.Return = A.FunctionReturn( Just (buildTree (A.Sequence xs)))
 
 
+  buildTree A.Block{A.open=o, A.childeren=ch, A.close=c} = case newChildren of
+    A.Sequence seq -> A.Block{A.open=o, A.childeren=seq, A.close=c}
+    _ -> A.Block{A.open=o, A.childeren=[newChildren], A.close=c}
+    where newChildren = buildTree (A.Sequence ch)
 
-  buildTree (Sequence [Token (L.StringLiteral str)]) = StringLiteral str
-  buildTree (Sequence [Token (L.DigitLiteral num)]) = NumericLiteral num
-  buildTree (Sequence [Nop]) = Nop
+  buildTree (A.Sequence(A.Token(L.Identifier ident) : A.Block{A.open='(', A.childeren=p, A.close=')'} : xs)) =
+    A.append A.FunctionCall{A.target=ident, A.params= parseArgs p} (buildTree (A.Sequence xs))
+
+  buildTree (A.Sequence []) = A.Nop
+
+  buildTree A.Nop = A.Nop
+  buildTree (A.Sequence(A.Statement s : xs)) = A.append (buildTree s) (buildTree (A.Sequence xs))
+
+
+
+  buildTree (A.Sequence [A.Token (L.StringLiteral str)]) = A.StringLiteral str
+  buildTree (A.Sequence [A.Token (L.DigitLiteral num)]) = A.NumericLiteral num
+  buildTree (A.Sequence [A.Token (L.IntegerLiteral num)]) = A.IntegerLiteral num
+  buildTree (A.Sequence [A.Nop]) = A.Nop
   -- buildTree (Sequence (Token(Keyword Struct) : Token(Identifier n) : Block{open='{' , childs=structBody, close='}'} : xs)) = append (StructDefinition{name=n, fields=parseStruct structBody}) (buildTree (Sequence xs))
-  buildTree (Sequence (Token(L.Keyword L.If) : Block{open='(' , childs=checkBody, close=')'}: Block{open='{', childs=body, close='}'} : xs)) =  case b of
-    Sequence seq -> IfStatement{condition=buildTree (Sequence checkBody), body=seq, next=Nothing}
-    otherwise -> IfStatement{condition=buildTree (Sequence checkBody), body=[b], next=Nothing}
-    where b = buildTree (Sequence body)
+  buildTree (A.Sequence (A.Token(L.Keyword L.If) : A.Block{A.open='(' , A.childeren=checkBody, A.close=')'}: A.Block{A.open='{', A.childeren=body, A.close='}'} : xs)) =  case b of
+    A.Sequence seq -> A.IfStatement{A.condition=buildTree (A.Sequence checkBody), A.body=seq, A.next=Nothing}
+    _ -> A.IfStatement{A.condition=buildTree (A.Sequence checkBody), A.body=[b], A.next=Nothing}
+    where b = buildTree (A.Sequence body)
 
-  buildTree (Sequence (Token(L.Keyword L.While) : Block{open='(' , childs=checkBody, close=')'}: Block{open='{', childs=body, close='}'} : xs)) = case b of
-    Sequence seq -> WhileStatement{condition=buildTree (Sequence checkBody), body=seq}
-    otherwise -> WhileStatement{condition=buildTree (Sequence checkBody), body=[b]}
-    where b = buildTree (Sequence body)
+  buildTree (A.Sequence (A.Token(L.Keyword L.While) : A.Block{A.open='(' , A.childeren=checkBody, A.close=')'}: A.Block{A.open='{', A.childeren=body, A.close='}'} : xs)) = case b of
+    A.Sequence seq -> A.WhileStatement{A.condition=buildTree (A.Sequence checkBody), A.body=seq}
+    _ -> A.WhileStatement{A.condition=buildTree (A.Sequence checkBody), A.body=[b]}
+    where b = buildTree (A.Sequence body)
   -- buildTree (Sequence (Token(Identifier ident) : Block{open='{', childs=c, close='}'})) =
 
 
   -- buildTree (Sequence(Token(Identifier p) : Token(Accessor acc) : Token(Identifier c) : xs)) = buildTree Sequence(ChildAccessor {parent=p, accessor=acc, child=c} :)
-  buildTree (Token(L.Identifier id)) = Variable{name=id}
-  buildTree (Token(L.StringLiteral str)) = StringLiteral str
+  buildTree (A.Token(L.Identifier id)) = A.Variable{A.name=id}
+  buildTree (A.Token(L.StringLiteral str)) = A.StringLiteral str
 
 
-  buildTree (Sequence [node]) = buildTree node
-  buildTree node = ParseError {message="Unknown pattern", node=Just node}
-  parse :: [L.FrogToken] ->([L.FrogToken], FrogNode)
-  parse tokenStream = (buffer, buildTree (groupStatements grouped))
-      where (buffer , grouped) = groupBlocks tokenStream Nothing;
+  buildTree (A.Sequence [node]) = buildTree node
+  buildTree node = A.ParseError {A.message="[buildTree] Unknown pattern", A.node=Just node}
+  parse :: [L.FrogToken] -> A.FrogNode
+  parse tokenStream = buildTree (groupStatements grouped)
+      where grouped = groupBlocks tokenStream;
+

@@ -1,10 +1,10 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.33.0.
+-- This file has been generated from package.yaml by hpack version 0.34.4.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: c6f07a4363a2d3c3f56c792040158f03dfa0cb2b9ddd8f26e5b2c04c8aaabeec
+-- hash: 7e9196b7e4d05a9511de203389c8e390231a403f96fe6fa8c6f9fb5ded5490cb
 
 name:           frog-lang
 version:        0.1.0.0
@@ -27,11 +27,16 @@ source-repository head
 
 library
   exposed-modules:
+      Arm
+      Ast
       Compiler
       Executor
+      Il
+      IlCompiler
       Lexer
       Lib
       ListTools
+      Optimizer
       Parser
       Printer
       Result
