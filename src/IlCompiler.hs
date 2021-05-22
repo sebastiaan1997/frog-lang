@@ -3,6 +3,7 @@ module IlCompiler(compile) where
     import qualified Il as I
     import Debug.Trace (trace, traceShow)
     import Data.Maybe (fromMaybe, fromJust)
+    import Data.List (elemIndex)
 
     compile :: A.FrogNode -> I.InstructionList
     compile n  =  trace ("[compile-buildStructure] " ++ show (buildStructure n) ++ "\n\n") (I.InstructionList (flattenStructure (buildStructure n)))
@@ -149,14 +150,58 @@ module IlCompiler(compile) where
     createStackFrames = createStackFramesImpl [ ]
 
 
+    getSPOffset :: String -> [ String ] -> Maybe Int
+    getSPOffset var stack = case elemIndex var stack  of
+        Just i -> Just (length stack - i)
+        Nothing -> Nothing
+
+    varToSPOffset :: I.Reference -> [ String ] -> Maybe I.Reference 
+    varToSPOffset (I.Variable var) stack = case getSPOffset var stack of 
+        Just off -> Just (I.StackPointerOffset off)
+        Nothing -> Nothing
+    varToSPOffset ref _ = Just ref
+
 
     createStackFramesImpl :: [ String ] -> [ I.Structure ] -> [ I.Structure ]
-    createStackFramesImpl stack (rt@I.Routine {I.name=n, I.body=b, I.params=p}: xs) = rt{I.body=} : createStackFramesImpl  stack xs
-        where (rtStackSize, rtBody) = createStackFramesImpl p b
+    createStackFramesImpl stack (rt@I.Routine {I.name=n, I.body=b, I.params=p}: xs) = rt{I.body=newBody} : createStackFramesImpl  stack xs
+        where
+            newBody = createStackFramesImpl p b
 
-
-    createStackFramesImpl stack (var@I.VariableScope{I.name=n} String String ([Structure]) ([Structure]))
     
+
+    
+
+    createStackFramesImpl stack (add@I.Add{I.lhs=l, I.rhs=r}: xs) = case (l, r) of
+        (I.Ref refLeft, I.Ref refRight) -> case (varToSPOffset refLeft stack, varToSPOffset refRight stack) of
+            (Just lSP, Just rSP) -> add{I.lhs=I.Ref lSP, I.rhs=I.Ref rSP} : next
+            _ -> add : next
+        (I.Ref refLeft, _) -> case varToSPOffset refLeft stack of
+            Just lSP -> add{I.lhs=I.Ref lSP} : next
+            _ -> add : next
+        (_, I.Ref refRight) -> case varToSPOffset refRight stack of
+            Just rSP -> add{I.rhs=I.Ref rSP} : next
+            _ -> add : next
+        _ -> add : next
+    createStackFramesImpl stack (sub@I.Sub{I.lhs=l, I.rhs=r}: xs) = case (l, r) of
+        (I.Ref refLeft, I.Ref refRight) -> case (varToSPOffset refLeft stack, varToSPOffset refRight stack) of
+            (Just lSP, Just rSP) -> sub{I.lhs=I.Ref lSP, I.rhs=I.Ref rSP} : next
+            _ -> sub : next
+        (I.Ref refLeft, _) -> case varToSPOffset refLeft stack of
+            Just lSP -> sub{I.lhs=I.Ref lSP} : next
+            _ -> sub : next
+        (_, I.Ref refRight) -> case varToSPOffset refRight stack of
+            Just rSP -> sub{I.rhs=I.Ref rSP} : next
+            _ -> add : next
+        _ -> sub : next
+
+
+        where next = createStackFrames stack xs
+
+
+
+
+    -- createStackFramesImpl stack (var@I.VariableScope{I.name=n, I.body=b} = (createStackFramesImpl (n:stack) b)
+
 
 
 

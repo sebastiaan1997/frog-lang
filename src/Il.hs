@@ -2,10 +2,10 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
 
     import Numeric (showHex)
     data Reference = Label String
-        | Offset (Reference, Integer)
-        | StackframeOffset { context :: String, offset :: Integer}
-        | StackPointerOffset Integer
-        | Absolute Integer
+        | Offset (Reference, Int)
+        | StackframeOffset { context :: String, offset :: Int}
+        | StackPointerOffset Int
+        | Absolute Int
         | Variable String
         | Prev -- Defines that the previous instruction provides this value.
         | Next -- Defines that the next instruction needs the current value.
