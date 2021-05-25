@@ -162,10 +162,24 @@ module IlCompiler(compile) where
     varToSPOffset ref _ = Just ref
 
 
+    replaceVariableImpl :: [ String ] -> I.Instruction -> I.Instruction
+    
+
+
     createStackFramesImpl :: [ String ] -> [ I.Structure ] -> [ I.Structure ]
     createStackFramesImpl stack (rt@I.Routine {I.name=n, I.body=b, I.params=p}: xs) = rt{I.body=newBody} : createStackFramesImpl  stack xs
         where
             newBody = createStackFramesImpl p b
+
+    createStackFramesImpl stack ((I.InstructionSequence instructions) : xs) = instr ++ createStackFramesImpl stack xs
+        where
+            instr = createStackFramesImpl stack (map I.SingleInstruction instructions )
+    
+    createStackFramesImpl stack ((I.SingleInstruction instr) : xs) = case instr of 
+        a@I.Add -> 
+
+            -- instr = map ((\x -> createStackFramesImpl stack (I.SingleInstruction x)) instructions)
+
 
     
 

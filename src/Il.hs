@@ -70,6 +70,47 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         | RetNone
         deriving ( Eq )
 
+
+    mapRefImpl :: (Reference -> Reference) -> Instruction -> Instruction
+    mapRefImpl func inst = case inst of
+        call@Call{storeReturn=Just r, routine=rt, args=a} -> call{ storeReturn=Just (func r), routine=func rt }
+        call@Call{storeReturn=Nothing, routine=rt, args=a} -> call{ routine=func rt }
+        (Goto g) -> Goto (func g)
+        cmp@CmpStmtNext{lhs=Ref l, rhs=Ref r} -> cmp{lhs=Ref (func l), rhs=Ref (func r)}
+        cmp@CmpStmtNext{lhs=_, rhs=Ref r} -> cmp{rhs=Ref (func r)}
+        cmp@CmpStmtNext{lhs=Ref l} -> cmp{lhs=Ref (func l)}
+        cmp@Cmp{lhs=Ref l, rhs=Ref r} -> cmp{lhs=Ref (func l), rhs=Ref (func r)}
+        cmp@Cmp{lhs=Ref l} -> cmp{lhs=Ref (func l)}
+        cmp@Cmp{rhs=Ref r} -> cmp{ rhs=Ref (func r)}
+        cmp@CmpStore{store=s, lhs=Ref l, rhs=Ref r} -> cmp{store=func s, lhs=Ref (func l), rhs=Ref (func r) }
+        cmp@CmpStore{store=s, lhs=Ref l } -> cmp{ store = func s, lhs=Ref (func l) }
+        cmp@CmpStore{store=s, rhs=Ref r } -> cmp{ store = func s, rhs=Ref (func r) }
+        add@Add{ store=s, lhs=Ref l, rhs=Ref r } -> add{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
+        add@Add{ store=s, lhs=Ref l } -> add{ store=func s, lhs = Ref (func l) }
+        add@Add{ store=s, rhs=Ref r } -> add{ store=func s, rhs = Ref (func r) }
+        sub@Sub{ store=s, lhs=Ref l, rhs=Ref r } -> sub{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
+        sub@Sub{ store=s, lhs=Ref l } -> sub{ store=func s, lhs = Ref (func l) }
+        sub@Sub{ store=s, rhs=Ref r } -> sub{ store=func s, rhs = Ref (func r) }
+        mul@Mul{ store=s, lhs=Ref l, rhs=Ref r } -> mul{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
+        mul@Mul{ store=s, lhs=Ref l } -> mul{ store=func s, lhs = Ref (func l) }
+        mul@Mul{ store=s, rhs=Ref r } -> mul{ store=func s, rhs = Ref (func r) }
+        div@Div{ store=s, lhs=Ref l, rhs=Ref r } -> div{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
+        div@Div{ store=s, lhs=Ref l } -> div{ store=func s, lhs = Ref (func l) }
+        div@Div{ store=s, rhs=Ref r } -> div{ store=func s, rhs = Ref (func r) }
+        
+        
+        
+
+
+
+
+
+    mapRef :: (Reference -> Reference) -> InstructionList -> InstructionList
+    mapRef func (InstructionList lst) = InstructionList (map (mapRefImpl func) lst)
+
+
+    
+
     instance Show Instruction where
         show Call { storeReturn=r, routine=target, args=a} = "\tCALL " ++ show r ++ ", " ++ show target ++ ", " ++ show a
         show CmpStmtNext{ lhs=l, rhs=r, conditionType=ct} = "\tCMPSN " ++ show l ++ ", " ++ show r ++ ", " ++ show ct
@@ -87,7 +128,7 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         show (Jump target) = "\tJUMP " ++ show target
         show (Load ref)    = "\tLOAD " ++ show ref
         show (Store ref)    = "\tSTORE " ++ show ref
-        show (Remove ref)   = "\tREM " ++ show ref 
+        show (Remove ref)   = "\tREM " ++ show ref
         show Set{store=sto, source=src}    = "\tSTORE " ++ show sto ++ ", " ++ show src
         show (Lbl l) = '.' : l
         show (Ret t) = "\tRET" ++ show t
