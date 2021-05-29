@@ -1,4 +1,4 @@
-module Arm(ArmRegister(..), ArmInstruction(..)) where 
+module Arm(ArmRegister(..), Instruction(..)) where 
 
 
     data Data = IntegerValue Int
@@ -28,7 +28,7 @@ module Arm(ArmRegister(..), ArmInstruction(..)) where
         deriving ( Eq, Show )
 
 
-    data ArmInstruction = Nop
+    data Instruction = Nop
         | LABEL String
         | ADCS  (ArmRegister, ArmRegister, ArmRegister) -- Add with carry
         | ADD   (ArmRegister, ArmRegister, Data)     -- Add
@@ -80,7 +80,8 @@ module Arm(ArmRegister(..), ArmInstruction(..)) where
         | UXTH
         | WFE
         | WFI
-        | TODO String
-        -- | PLACEHOLDER InstructionPlaceholder
-        | ERROR String
         deriving ( Eq, Show )
+
+    data ArmDocument
+
+    
