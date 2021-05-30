@@ -1,10 +1,12 @@
 
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..), InstructionList(..), mapInstructionRef, mapInstructionsInStructure, mapRefs, Register(..)) where
+module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..), InstructionList(..), mapInstructionsInStructure, mapRefs, Register(..)) where
 
     import Numeric (showHex)
     import qualified Data.Data as D
+    import qualified Data.Map as M
+    import Data.Maybe(mapMaybe, catMaybes)
 
     newtype Register =  Register Int
         deriving (Eq, Show, D.Data)
@@ -45,6 +47,8 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         deriving ( Eq, D.Data )
 
 
+
+
     instance Show Data where
         show (Ref ref) = "&" ++ show ref
         show (IntegerValue val) = show val
@@ -52,6 +56,8 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         show (BooleanValue b) = if b then "true" else "false"
         show (ByteArray arr) = arr
         show (IVector val) = show val
+
+    -- map 
 
 
 
@@ -81,33 +87,91 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         | Pop
         | PopVar [Reference]
         | Remove Reference
+        | Sum [Data]
         | Set { store :: Reference, source :: Data }
         | Lbl String
         | Ret Data
         | RetNone
         deriving ( Eq, D.Data )
 
-    hasField :: D.Data a => String -> a -> Bool
-    hasField  name instr  = name `elem` D.constrFields(D.toConstr instr)
-
-    tryGet :: D.Data a => String -> (a -> b) -> a -> Maybe b
-    tryGet name accessor t
-        | hasField name t   = Just (accessor t)
-        | otherwise = Nothing
-
-
-
-
-
-
-    mapInstructionRefExtra :: (Reference -> (a, Reference)) -> Instruction -> ([a], Instruction)
-    mapInstructionRefExtra func inst =  ([], inst)
+    replaceInstructionData :: Instruction -> [Maybe Data] -> Maybe Instruction
+    replaceInstructionData c@Call{} (Just (Ref sr): Just (Ref rt): xs) = Just c{storeReturn=Just sr, routine=rt, args=catMaybes xs}
+    replaceInstructionData c@Call{} (Nothing: Just (Ref rt): xs) = Just c{storeReturn=Nothing, routine=rt, args=catMaybes xs}
+    replaceInstructionData i@Goto{} [Just (Ref ref)] = (Just . Goto) ref
+    replaceInstructionData i@CmpStmtNext{} [Just l, Just r] = Just i{lhs=l, rhs=r}
+    replaceInstructionData i@CmpStore{} [Just (Ref s), Just l, Just r] = Just i{store=s, lhs=l, rhs=r}
+    replaceInstructionData i@Cmp{} [Just l, Just r]= Just i{lhs=l, rhs=r}
+    replaceInstructionData i@Add{} [Just (Ref s), Just l, Just r]  = Just i{lhs=l, rhs=r, store=s}
+    replaceInstructionData i@Sub{} [Just (Ref s), Just l,Just r] = Just i{lhs=l, rhs=r, store=s}
+    replaceInstructionData i@Mul{} [Just (Ref s), Just l,Just r] = Just i{lhs=l, rhs=r, store=s}
+    replaceInstructionData i@Div{} [Just (Ref s), Just l,Just r] = Just i{lhs=l, rhs=r, store=s}
+    replaceInstructionData i@B{} [Just (Ref t), Just l,Just r] = Just i{lhs=l, rhs=r, target=t}
+    replaceInstructionData i@BC{} [Just (Ref t)] = Just i{target=t}
+    replaceInstructionData (Jump _) [Just (Ref ref)] = (Just . Jump) ref
+    replaceInstructionData (Load _) [Just (Ref ref)] = (Just . Load) ref
+    replaceInstructionData (Store _) [Just (Ref ref)] = (Just . Store) ref
+    replaceInstructionData (Create _) [Just (Ref ref)] = (Just . Create) ref
+    replaceInstructionData (Push _) [Just d] = (Just . Push) d
+    replaceInstructionData (LoadToReg (_,_)) [Just (Ref (R reg)), Just (Ref ref)] = (Just . LoadToReg) (reg, ref)
+    replaceInstructionData (StoreFromReg (_,_)) [Just (Ref (R reg)), Just (Ref ref)] = (Just . StoreFromReg) (reg, ref)
+    replaceInstructionData i@PushVar{} [Just (Ref st), Just src] =  Just i{store=st, source=src}
+    replaceInstructionData i@Set{} [Just (Ref st), Just src] =  Just i{store=st, source=src}
+    replaceInstructionData (PopVar _) vars = (Just . PopVar . mapMaybe filterFunc) vars
         where
-            (maybeLhs, maybeRhs, maybeStore) = (tryGet "lhs" lhs inst, tryGet "rhs" rhs inst , tryGet "store" store inst )
-            newLhs = case newLhs of
-                Just l -> let (r, ref) func l in ([r], [ref])
-                
-            
+                filterFunc = \case Just (Ref r) -> Just r; _ -> Nothing
+    replaceInstructionData (Remove _) [Just (Ref ref)] = (Just . Remove) ref
+    replaceInstructionData (Sum _) [] = Nothing
+    replaceInstructionData (Sum _) args = (Just . Sum . catMaybes) args
+    replaceInstructionData (Ret _) [Just ret] = (Just . Ret) ret
+    replaceInstructionData _ _ = Nothing
+
+    extractInstructionData :: Instruction -> [Maybe Data]
+    extractInstructionData Call{storeReturn=sr, routine=rt, args=a} = ((Just . Ref) =<< sr) : (Just . Ref) rt : map Just a
+    extractInstructionData (Goto ref) = [(Just . Ref) ref]
+    extractInstructionData CmpStmtNext{lhs=l, rhs=r} = map Just [l,r]
+    extractInstructionData CmpStore{lhs=l, rhs=r, store=s} = map Just [Ref s, l,r]
+    extractInstructionData Cmp{lhs=l, rhs=r} = map Just [l,r]
+    extractInstructionData Add{lhs=l, rhs=r, store=s} = map Just [Ref s, l,r]
+    extractInstructionData Sub{lhs=l, rhs=r, store=s} = map Just [Ref s, l,r]
+    extractInstructionData Mul{lhs=l, rhs=r, store=s} = map Just [Ref s, l,r]
+    extractInstructionData Div{lhs=l, rhs=r, store=s} = map Just [Ref s, l,r]
+    extractInstructionData B{lhs=l, rhs=r, target=t} = map Just [Ref t, l,r]
+    extractInstructionData BC{target=t} = [(Just . Ref) t]
+    extractInstructionData (Increment i) = [(Just . Ref) i]
+    extractInstructionData (Decrement d) = [(Just . Ref) d]
+    extractInstructionData (Jump j) = [(Just . Ref) j]
+    extractInstructionData (Load l) = [(Just . Ref) l]
+    extractInstructionData (Store l) = [(Just . Ref) l]
+    extractInstructionData (LoadToReg (reg, ref)) = map (Just . Ref) [R reg, ref]
+    extractInstructionData (StoreFromReg (reg, ref)) = map (Just .  Ref) [R reg, ref]
+    extractInstructionData (Create ref) = [(Just . Ref) ref]
+    extractInstructionData (Push d) = [Just d]
+    extractInstructionData PushVar{store=st, source=s} = map Just [Ref st, s]
+    extractInstructionData (PopVar v) = map (Just . Ref) v
+    extractInstructionData (Remove ref) = [(Just . Ref) ref]
+    extractInstructionData (Sum d) = map Just d
+    extractInstructionData Set{source=src, store=st} = map Just [Ref st, src]
+    extractInstructionData (Ret ret) = [Just ret]
+    extractInstructionData _ = []
+
+
+    dataRef:: (Reference -> Reference) -> Data -> Data
+    dataRef func (Ref r) = (Ref . func) r
+    dataRef _ d = d
+
+    mapInstructionData :: (Data -> Data) -> Instruction -> Maybe Instruction
+    mapInstructionData func instr = (replaceInstructionData instr . map (fmap func) . extractInstructionData) instr
+
+    mapInstructionRefs :: (Reference -> Reference) -> Instruction -> Maybe Instruction
+    mapInstructionRefs func = mapInstructionData (\case Ref r -> (Ref .func) r; other -> other)
+
+    mapInstructionListRefs :: (Reference -> Reference) -> InstructionList -> Maybe InstructionList
+    mapInstructionListRefs func (InstructionList lst) 
+        | any isNothing d = Nothing
+        | otherwise = catMaybes d
+        where
+            d = map mapInstructionRefs lst
+    
 
 
 
@@ -118,48 +182,6 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
 
 
 
-    mapInstructionRefExtra func inst = case inst of
-        -- call@Call{storeReturn=Just r, routine=rt, args=a} -> call{ storeReturn=Just (func r), routine=func rt }
-        -- call@Call{storeReturn=Nothing, routine=rt, args=a} -> call{ routine=func rt }
-        -- (Goto g) -> Goto (func g)
-        -- cmp@CmpStmtNext{lhs=Ref l, rhs=Ref r} -> cmp{lhs=Ref (func l), rhs=Ref (func r)}
-
-        -- cmp@CmpStmtNext{lhs=Ref l} -> cmp{lhs=Ref (func l)}
-        -- cmp@CmpStmtNext{rhs=Ref r} -> cmp{rhs=Ref (func r)}
-        cmp@Cmp{lhs=Ref l, rhs=Ref r} -> cmp{lhs=Ref (func l), rhs=Ref (func r)}
-        cmp@Cmp{lhs=Ref l} -> cmp{lhs=Ref (func l)}
-        cmp@Cmp{rhs=Ref r} -> cmp{ rhs=Ref (func r)}
-        cmp@CmpStore{store=s, lhs=Ref l, rhs=Ref r} -> cmp{store=func s, lhs=Ref (func l), rhs=Ref (func r) }
-        cmp@CmpStore{store=s, lhs=Ref l } -> cmp{ store = func s, lhs=Ref (func l) }
-        cmp@CmpStore{store=s, rhs=Ref r } -> cmp{ store = func s, rhs=Ref (func r) }
-        add@Add{ store=s, lhs=Ref l, rhs=Ref r } -> add{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
-        add@Add{ store=s, lhs=Ref l } -> add{ store=func s, lhs = Ref (func l) }
-        add@Add{ store=s, rhs=Ref r } -> add{ store=func s, rhs = Ref (func r) }
-        sub@Sub{ store=s, lhs=Ref l, rhs=Ref r } -> sub{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
-        sub@Sub{ store=s, lhs=Ref l } -> sub{ store=func s, lhs = Ref (func l) }
-        sub@Sub{ store=s, rhs=Ref r } -> sub{ store=func s, rhs = Ref (func r) }
-        mul@Mul{ store=s, lhs=Ref l, rhs=Ref r } -> mul{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
-        mul@Mul{ store=s, lhs=Ref l } -> mul{ store=func s, lhs = Ref (func l) }
-        mul@Mul{ store=s, rhs=Ref r } -> mul{ store=func s, rhs = Ref (func r) }
-        div@Div{ store=s, lhs=Ref l, rhs=Ref r } -> div{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
-        div@Div{ store=s, lhs=Ref l } -> div{ store=func s, lhs = Ref (func l) }
-        div@Div{ store=s, rhs=Ref r } -> div{ store=func s, rhs = Ref (func r) }
-        (Increment inc) -> Increment (func inc)
-        (Decrement dec) -> Increment (func dec)
-        (Jump j) -> Jump (func j)
-        (Load l) -> Load (func l)
-        (Store s) -> Store (func s)
-        (Create r) -> Create(func r)
-        (Remove r) -> Remove(func r)
-        Set{store=st, source=Ref so} -> Set{store=func st, source=Ref (func so)}
-        s@Set{store=st} -> s{store=func st}
-        (Ret (Ref val)) -> Ret (Ref (func val))
-        inst -> inst
-
-
-
-    mapInstructionRef :: (Reference -> Reference) -> Instruction -> Instruction
-    mapInstructionRef func inst = snd (mapInstructionRefExtra (\x -> (Nothing, func x)) inst)
 
 
 
@@ -173,8 +195,67 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
 
 
 
-    mapRefs :: (Reference -> Reference) -> InstructionList -> InstructionList
-    mapRefs func (InstructionList lst) = InstructionList (map (mapInstructionRef func) lst)
+
+
+
+    -- mapInstructionRef :: (Reference -> Reference) -> Instruction -> Instruction
+    -- mapInstructionRef func inst = case inst of
+    --     call@Call{storeReturn=Just r, routine=rt, args=a} -> call{ storeReturn=Just (func r), routine=func rt }
+    --     call@Call{storeReturn=Nothing, routine=rt, args=a} -> call{ routine=func rt }
+    --     (Goto g) -> Goto (func g)
+    --     cmp@CmpStmtNext{lhs=Ref l, rhs=Ref r} -> cmp{lhs=Ref (func l), rhs=Ref (func r)}
+
+    --     cmp@CmpStmtNext{lhs=Ref l} -> cmp{lhs=Ref (func l)}
+    --     cmp@CmpStmtNext{rhs=Ref r} -> cmp{rhs=Ref (func r)}
+    --     cmp@Cmp{lhs=Ref l, rhs=Ref r} -> cmp{lhs=Ref (func l), rhs=Ref (func r)}
+    --     cmp@Cmp{lhs=Ref l} -> cmp{lhs=Ref (func l)}
+    --     cmp@Cmp{rhs=Ref r} -> cmp{ rhs=Ref (func r)}
+    --     cmp@CmpStore{store=s, lhs=Ref l, rhs=Ref r} -> cmp{store=func s, lhs=Ref (func l), rhs=Ref (func r) }
+    --     cmp@CmpStore{store=s, lhs=Ref l } -> cmp{ store = func s, lhs=Ref (func l) }
+    --     cmp@CmpStore{store=s, rhs=Ref r } -> cmp{ store = func s, rhs=Ref (func r) }
+    --     add@Add{ store=s, lhs=Ref l, rhs=Ref r } -> add{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
+    --     add@Add{ store=s, lhs=Ref l } -> add{ store=func s, lhs = Ref (func l) }
+    --     add@Add{ store=s, rhs=Ref r } -> add{ store=func s, rhs = Ref (func r) }
+    --     sub@Sub{ store=s, lhs=Ref l, rhs=Ref r } -> sub{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
+    --     sub@Sub{ store=s, lhs=Ref l } -> sub{ store=func s, lhs = Ref (func l) }
+    --     sub@Sub{ store=s, rhs=Ref r } -> sub{ store=func s, rhs = Ref (func r) }
+    --     mul@Mul{ store=s, lhs=Ref l, rhs=Ref r } -> mul{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
+    --     mul@Mul{ store=s, lhs=Ref l } -> mul{ store=func s, lhs = Ref (func l) }
+    --     mul@Mul{ store=s, rhs=Ref r } -> mul{ store=func s, rhs = Ref (func r) }
+    --     div@Div{ store=s, lhs=Ref l, rhs=Ref r } -> div{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
+    --     div@Div{ store=s, lhs=Ref l } -> div{ store=func s, lhs = Ref (func l) }
+    --     div@Div{ store=s, rhs=Ref r } -> div{ store=func s, rhs = Ref (func r) }
+    --     (Increment inc) -> Increment (func inc)
+    --     (Decrement dec) -> Increment (func dec)
+    --     (Jump j) -> Jump (func j)
+    --     (Load l) -> Load (func l)
+    --     (Store s) -> Store (func s)
+    --     (Create r) -> Create(func r)
+    --     (Remove r) -> Remove(func r)
+    --     Set{store=st, source=Ref so} -> Set{store=func st, source=Ref (func so)}
+    --     s@Set{store=st} -> s{store=func st}
+    --     (Ret (Ref val)) -> Ret (Ref (func val))
+    --     inst -> inst
+
+
+
+
+    -- -- mapInstructionRef func inst = snd (mapInstructionRefExtra (\x -> (Nothing, func x)) inst)
+
+
+
+
+
+
+
+
+
+
+
+
+
+    -- mapRefs :: (Reference -> Reference) -> InstructionList -> InstructionList
+    -- mapRefs func (InstructionList lst) = InstructionList (map (mapInstructionRef func) lst)
 
 
 
@@ -238,7 +319,7 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         | Equal
         | NotEqual
         | Undefined
-        deriving ( Eq, Show )
+        deriving ( Eq, Show, D.Data )
 
     data Structure = SingleInstruction Instruction
         | InstructionSequence [ Instruction ]
