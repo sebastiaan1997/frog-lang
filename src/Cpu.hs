@@ -8,6 +8,8 @@ module Cpu(RegisterType(..), Register(..), Cpu(..), armCortexM0, getRegistersByT
         | StackPointer
         | ProgramCounter
         | LinkRegister
+        deriving(Show, Eq)
+
 
     data Register = Register{
         registerIndex :: Int,
@@ -15,6 +17,7 @@ module Cpu(RegisterType(..), Register(..), Cpu(..), armCortexM0, getRegistersByT
         size :: Int,
         registerType :: RegisterType
     }
+        deriving(Show, Eq)
 
     data Cpu = Cpu{
         cpuName :: String,
@@ -51,7 +54,7 @@ module Cpu(RegisterType(..), Register(..), Cpu(..), armCortexM0, getRegistersByT
 
     getRegistersByType :: RegisterType -> Cpu -> [Register]
     getRegistersByType regType Cpu{registers=r} = filter (\case
-                Register{registerType=regType} -> True
+                Register{registerType=rt} -> rt == regType
                 _ -> False) r
 
     

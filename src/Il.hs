@@ -1,15 +1,18 @@
 
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..), InstructionList(..), mapInstructionsInStructure, mapRefs, Register(..)) where
+module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..), InstructionList(..), mapInstructionsInStructure, Register(..), mapInstructionListRefs, mapInstructionRefs, extractInstructionData, replaceInstructionData, dataRef, dataRefPayload, mapInstructionRefPayload) where
 
     import Numeric (showHex)
     import qualified Data.Data as D
     import qualified Data.Map as M
-    import Data.Maybe(mapMaybe, catMaybes)
+    import Data.Maybe(mapMaybe, catMaybes, isNothing, fromMaybe)
 
     newtype Register =  Register Int
-        deriving (Eq, Show, D.Data)
+        deriving (Eq, D.Data)
+    
+    instance Show Register where
+        show (Register r) = 'R' : show r
     data Reference = Label String
         | R Register
         | Offset (Reference, Int)
@@ -23,6 +26,7 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         deriving ( Eq, D.Data )
 
     instance Show Reference where
+        show (R r) = show  r
         show (Label lbl) = '.' : lbl
         show (StackPointerOffset o) = "[sp, #" ++ show o ++ "]"
         show StackframeOffset{context=ctx, offset=o} = '"' : ctx ++ "\"->[ sp, " ++ show o ++ "]"
@@ -33,11 +37,6 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         show Next = "next"
         show Parent = "parent"
 
-
-
-
-
-
     data Data = Ref Reference
         | IntegerValue Int
         | BinaryType { value :: Int, size :: Int }
@@ -46,9 +45,6 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         | IVector [ Int ]
         deriving ( Eq, D.Data )
 
-
-
-
     instance Show Data where
         show (Ref ref) = "&" ++ show ref
         show (IntegerValue val) = show val
@@ -56,11 +52,6 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         show (BooleanValue b) = if b then "true" else "false"
         show (ByteArray arr) = arr
         show (IVector val) = show val
-
-    -- map 
-
-
-
 
 
     data Instruction = Call { storeReturn :: Maybe Reference, routine :: Reference, args :: [ Data ] }
@@ -120,6 +111,8 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         where
                 filterFunc = \case Just (Ref r) -> Just r; _ -> Nothing
     replaceInstructionData (Remove _) [Just (Ref ref)] = (Just . Remove) ref
+    replaceInstructionData (Increment _) [Just (Ref r)] = (Just . Increment) r
+    replaceInstructionData (Decrement _) [Just (Ref r)] = (Just . Decrement) r
     replaceInstructionData (Sum _) [] = Nothing
     replaceInstructionData (Sum _) args = (Just . Sum . catMaybes) args
     replaceInstructionData (Ret _) [Just ret] = (Just . Ret) ret
@@ -155,9 +148,36 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
     extractInstructionData _ = []
 
 
+
+
+    dataRefPayload :: (Reference -> (Reference, a)) -> Data -> Maybe (Data, a)
+    dataRefPayload func (Ref ref) =  Just (Ref newRef, p)
+        where
+            (newRef, p) = func ref
+    dataRefPayload _ _ = Nothing
+
+
     dataRef:: (Reference -> Reference) -> Data -> Data
     dataRef func (Ref r) = (Ref . func) r
     dataRef _ d = d
+
+
+    mapInstructionRefPayload :: (Reference -> (Reference, a)) -> Instruction -> Maybe (Instruction, [a])
+    mapInstructionRefPayload func instr =  (\x -> Just(x, payload)) =<< newInstruction
+        where
+            result = (map (maybe Nothing (dataRefPayload func)) . extractInstructionData) instr
+            payload = (map snd . catMaybes) result
+            newInstruction = (replaceInstructionData instr . map (fmap fst)) result
+
+
+    mapInstructionDataPayload :: (Data -> (Data, a)) -> Instruction -> Maybe (Instruction, [a])
+    mapInstructionDataPayload func instr =  (\x -> Just(x, payload)) =<< newInstruction
+        where
+            result = (map (fmap func) . extractInstructionData) instr
+            payload = (map snd . catMaybes) result
+            newInstruction = (replaceInstructionData instr . map (fmap fst)) result
+
+    
 
     mapInstructionData :: (Data -> Data) -> Instruction -> Maybe Instruction
     mapInstructionData func instr = (replaceInstructionData instr . map (fmap func) . extractInstructionData) instr
@@ -166,99 +186,11 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
     mapInstructionRefs func = mapInstructionData (\case Ref r -> (Ref .func) r; other -> other)
 
     mapInstructionListRefs :: (Reference -> Reference) -> InstructionList -> Maybe InstructionList
-    mapInstructionListRefs func (InstructionList lst) 
+    mapInstructionListRefs func (InstructionList lst)
         | any isNothing d = Nothing
-        | otherwise = catMaybes d
+        | otherwise = (Just . InstructionList . catMaybes) d
         where
-            d = map mapInstructionRefs lst
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    -- mapInstructionRef :: (Reference -> Reference) -> Instruction -> Instruction
-    -- mapInstructionRef func inst = case inst of
-    --     call@Call{storeReturn=Just r, routine=rt, args=a} -> call{ storeReturn=Just (func r), routine=func rt }
-    --     call@Call{storeReturn=Nothing, routine=rt, args=a} -> call{ routine=func rt }
-    --     (Goto g) -> Goto (func g)
-    --     cmp@CmpStmtNext{lhs=Ref l, rhs=Ref r} -> cmp{lhs=Ref (func l), rhs=Ref (func r)}
-
-    --     cmp@CmpStmtNext{lhs=Ref l} -> cmp{lhs=Ref (func l)}
-    --     cmp@CmpStmtNext{rhs=Ref r} -> cmp{rhs=Ref (func r)}
-    --     cmp@Cmp{lhs=Ref l, rhs=Ref r} -> cmp{lhs=Ref (func l), rhs=Ref (func r)}
-    --     cmp@Cmp{lhs=Ref l} -> cmp{lhs=Ref (func l)}
-    --     cmp@Cmp{rhs=Ref r} -> cmp{ rhs=Ref (func r)}
-    --     cmp@CmpStore{store=s, lhs=Ref l, rhs=Ref r} -> cmp{store=func s, lhs=Ref (func l), rhs=Ref (func r) }
-    --     cmp@CmpStore{store=s, lhs=Ref l } -> cmp{ store = func s, lhs=Ref (func l) }
-    --     cmp@CmpStore{store=s, rhs=Ref r } -> cmp{ store = func s, rhs=Ref (func r) }
-    --     add@Add{ store=s, lhs=Ref l, rhs=Ref r } -> add{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
-    --     add@Add{ store=s, lhs=Ref l } -> add{ store=func s, lhs = Ref (func l) }
-    --     add@Add{ store=s, rhs=Ref r } -> add{ store=func s, rhs = Ref (func r) }
-    --     sub@Sub{ store=s, lhs=Ref l, rhs=Ref r } -> sub{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
-    --     sub@Sub{ store=s, lhs=Ref l } -> sub{ store=func s, lhs = Ref (func l) }
-    --     sub@Sub{ store=s, rhs=Ref r } -> sub{ store=func s, rhs = Ref (func r) }
-    --     mul@Mul{ store=s, lhs=Ref l, rhs=Ref r } -> mul{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
-    --     mul@Mul{ store=s, lhs=Ref l } -> mul{ store=func s, lhs = Ref (func l) }
-    --     mul@Mul{ store=s, rhs=Ref r } -> mul{ store=func s, rhs = Ref (func r) }
-    --     div@Div{ store=s, lhs=Ref l, rhs=Ref r } -> div{ store=func s, lhs = Ref (func l), rhs = Ref (func r)}
-    --     div@Div{ store=s, lhs=Ref l } -> div{ store=func s, lhs = Ref (func l) }
-    --     div@Div{ store=s, rhs=Ref r } -> div{ store=func s, rhs = Ref (func r) }
-    --     (Increment inc) -> Increment (func inc)
-    --     (Decrement dec) -> Increment (func dec)
-    --     (Jump j) -> Jump (func j)
-    --     (Load l) -> Load (func l)
-    --     (Store s) -> Store (func s)
-    --     (Create r) -> Create(func r)
-    --     (Remove r) -> Remove(func r)
-    --     Set{store=st, source=Ref so} -> Set{store=func st, source=Ref (func so)}
-    --     s@Set{store=st} -> s{store=func st}
-    --     (Ret (Ref val)) -> Ret (Ref (func val))
-    --     inst -> inst
-
-
-
-
-    -- -- mapInstructionRef func inst = snd (mapInstructionRefExtra (\x -> (Nothing, func x)) inst)
-
-
-
-
-
-
-
-
-
-
-
-
-
-    -- mapRefs :: (Reference -> Reference) -> InstructionList -> InstructionList
-    -- mapRefs func (InstructionList lst) = InstructionList (map (mapInstructionRef func) lst)
-
-
-
+            d = map (mapInstructionRefs func) lst
 
     instance Show Instruction where
         show Call { storeReturn=r, routine=target, args=a} = "\tCALL " ++ show r ++ ", " ++ show target ++ ", " ++ show a
@@ -287,30 +219,13 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         show (Lbl l) = '.' : l
         show (Ret t) = "\tRET" ++ show t
         show RetNone = "\tRETNONE"
-
-
-
-
-
-
+        show (LoadToReg(st, src))  = "\tLDREG " ++ show st ++ ", " ++ show src
+        show (StoreFromReg(st, src)) = "\tLSTOREG " ++ show st ++ ", " ++ show src
 
     newtype InstructionList = InstructionList [ Instruction ]
 
-
-
-
     instance Show InstructionList where
         show (InstructionList lst) = foldl (\l r -> l ++ show r ++ "\n") " " lst
-
-
-
-
-
-
-
-
-
-
     data BranchType = Unconditional
         | Greater
         | GreaterEqual
@@ -331,6 +246,7 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         | Scope [ Structure ]
         | VariableScope { name :: String, typename :: String, assignment :: [Structure], body :: [Structure]}
         | ConstantScope { name :: String, typename :: String, assignment :: [Structure], body :: [Structure]}
+        | Error { name :: String, body :: [Structure]}
         deriving ( Eq, Show )
 
     mapStructure :: (Structure -> Structure) -> Structure -> Structure
@@ -354,8 +270,6 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
                 InstructionSequence is -> InstructionSequence (map func is)
                 other -> other
 
-    mapStructureRefs :: (Reference -> Reference) -> Structure -> Structure
-    mapStructureRefs func = mapInstructionsInStructure (mapInstructionRef func)
 
 
 

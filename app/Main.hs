@@ -8,7 +8,7 @@ module Main(main) where
 
     import Debug.Trace ( trace, traceShow )
     import qualified IlCompiler as Il
-
+    import qualified Cpu as C
 
 
     main :: IO ()
@@ -23,7 +23,7 @@ module Main(main) where
             print ( Parser.parse  (Lexer.lexFrog contents));
             putStrLn "IL:";
             putStrLn "====";
-            print (Il.compile (Parser.parse  (Lexer.lexFrog contents)));
+            print (Il.compileOptimize C.armCortexM0  (Parser.parse  (Lexer.lexFrog contents)));
             putStrLn "\n====\n";
             putStrLn "ASM - ARM Cortex M0:";
             putStrLn "====";

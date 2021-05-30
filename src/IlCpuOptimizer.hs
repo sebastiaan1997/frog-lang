@@ -1,4 +1,6 @@
-module IlCpuOptimizer where
+module IlCpuOptimizer(fillRegisters) where
+    import Data.List
+    import Debug.Trace (trace, traceShow)
     import qualified Cpu as C
     import qualified Il as I
     import Data.List (elemIndex)
@@ -12,15 +14,15 @@ module IlCpuOptimizer where
 
 
     getFreeGPRegister :: C.Cpu -> HM.HashMap Int (I.Reference, Bool) -> Maybe (Int, [I.Instruction])
-    getFreeGPRegister cpu registers = case (freeRegister, unlockedRegister, unloadRef) of
+    getFreeGPRegister cpu registers = trace ("[getFreeGPRegister] => freeRegister: " ++ show freeRegister)  (case (freeRegister, unlockedRegister, unloadRef) of
             (Just registerId, _, _) -> Just (registerId, [])
             (Nothing, Just registerId, Just (ref, _)) -> Just (registerId, [I.StoreFromReg (I.Register registerId, ref)])
-            _ -> Nothing
+            _ -> Nothing)
             where
                 usedUnlockedRegisters = HM.keys (HM.filter (\(_,l) -> not l) registers)
                 gpRegisters = C.getRegistersByType C.GeneralPurpose cpu
                 registerIds = map C.registerIndex gpRegisters
-                freeRegisters = filter (`notElem` usedUnlockedRegisters) registerIds
+                freeRegisters = registerIds \\ HM.keys registers
                 freeRegister = M.listToMaybe freeRegisters
                 unlockedRegister = M.listToMaybe usedUnlockedRegisters
                 unloadRef = case unlockedRegister of
@@ -30,71 +32,48 @@ module IlCpuOptimizer where
 
 
 
-    loadVariable :: I.Reference -> C.Cpu -> HM.HashMap Int (I.Reference, Bool) -> Maybe ([String], (Int, I.Reference, Bool), [I.Instruction ])
-    loadVariable _ _ _ = Nothing
-    loadVariable (I.Variable "") _ _ = Nothing
-    loadVariable ref cpu@C.Cpu{C.registers=r} registers = case (reg, emptyRegister) of
-        (Just targetRegister, _) -> Just (stack, targetRegister, [])
-        (Nothing, Just (r, instr)) -> Just (stack, (r, ref, True), instr ++ [I.LoadToReg ((I.Register r, ref))])
+    loadReference :: I.Reference -> C.Cpu -> HM.HashMap Int (I.Reference, Bool) -> Maybe ((Int, I.Reference, Bool), [I.Instruction])
+    loadReference (I.Variable "") _ _ = Nothing
+    loadReference ref cpu@C.Cpu{C.registers=r} registers = case (reg, emptyRegister) of
+        (Just targetRegister, _) -> Just (targetRegister, [])
+        (Nothing, Just (r, instr)) -> Just ((r, ref, True), instr ++ [I.LoadToReg (I.Register r, ref)])
         _ -> Nothing
         where
             reg = M.listToMaybe (map (\(x,(y,z)) -> (x,y,z)) (HM.toList (HM.filter (\(d, _) -> d == ref) registers)))
             emptyRegister = getFreeGPRegister cpu registers
 
-    -- fillRegistersOnStrctureImpl :: ([I.Structure], HM.HashMap int (I.Reference , Bool)) -> [I.Structure] -> ([I.Structure], HM.HashMap int (I.Reference , Bool))
+
+    foldlLoadReferenceImpl :: C.Cpu -> ([Maybe I.Data], HM.HashMap Int (I.Reference, Bool), [I.Instruction ]) -> Maybe I.Data -> ([Maybe I.Data], HM.HashMap Int (I.Reference, Bool), [I.Instruction ])
+    foldlLoadReferenceImpl cpu  (dataList, registerState, instructions) (Just (I.Ref r)) = case lrResult of
+            (Just ((num, val, lock), instr)) ->  (dataList ++ [(Just . I.Ref . I.R . I.Register) num], HM.insert num (r, lock) registerState, instructions ++ instr )
+            Nothing -> (dataList, registerState, instructions)
+        where
+            lrResult = loadReference r cpu registerState
+
+    foldlLoadReferenceImpl _ (dataList, registerState, instructions) rhs = (dataList ++ [rhs], registerState, instructions)
+
+
+
+
+
+
+    fillRegistersImpl ::  C.Cpu -> ([I.Instruction], HM.HashMap Int (I.Reference, Bool)) -> I.Instruction -> ([I.Instruction], HM.HashMap Int (I.Reference, Bool))
+    fillRegistersImpl _ (lst, state) i@I.PushVar{} = (lst ++ [i], state)
+    fillRegistersImpl _ (lst, state) i@I.PopVar{} = (lst ++ [i], state)
+    fillRegistersImpl _ (lst, state) i@I.Jump{} = (lst ++ [i], state)
+
+
+    fillRegistersImpl cpu (instructionList, registerState) instruction = traceShow registerState (instructionList ++ newInstructions ++ [ M.fromMaybe instruction newInstruction ], newRegisterState)
+        where
+            instructionData = I.extractInstructionData instruction
+            (newInstructionData, newRegisterState, newInstructions) = foldl (foldlLoadReferenceImpl cpu) ([], registerState, []) instructionData
+            newInstruction = I.replaceInstructionData instruction newInstructionData
+
+    fillRegisters :: C.Cpu -> I.InstructionList -> I.InstructionList
+    fillRegisters cpu (I.InstructionList lst)  =  (I.InstructionList . fst .  foldl (fillRegistersImpl cpu) ([], HM.empty)) lst
+
+
     
 
 
 
-    fillRegistersOnInstructionImpl :: ([I.Instruction], HM.HashMap int (I.Reference , Bool)) -> I.Instruction -> ([I.Instruction], HM.HashMap int (I.Reference , Bool))
-
-
-    
-    fillRegistersOnInstructionImpl (lst, regs) inst = (lst ++ [inst], regs)
-        
-
-
-
-
-
-
-
-
-
-    -- functionReturn :: C.Cpu -> [String] -> [(Int, I.Reference)] -> [I.Structure] -> [I.Structure]
-
-
-    -- fillRegisters
-
-
-
-
-
-
-
-    -- fillRegisters cpu stack regs struct = []
-
-
-
-
-
-    -- fillRegisters stack rt@I.Routine{I.body=b} = rt{I.body= map stackFunc b}
-        -- where stackFunc = fillRegisters stack
-    -- fillRegisters stack rt@I.ConditionalBranch{I.condition=c, I.trueBranch=t, I.falseBranch=f} = rt{I.condition=map stackFunc c, I.trueBranch=map stackFunc t, I.falseBranch=map stackFunc f}
-        -- where stackFunc = fillRegisters stack
-    -- fillRegisters stack b@I.Branch{I.match=m} = b{I.match=stackFunc m}
-        -- where stackFunc = fillRegisters stack
-    -- fillRegisters stack l@I.FiniteLoop{I.condition=c, I.body=b} =  l{I.body=map stackFunc b, I.condition=map stackFunc c}
-        -- where
-            -- stackFunc = fillRegisters stack
-
-
-
-    -- fillRegisters stack l@I.InfiniteLoop{I.body=b} = l{I.body=map stackFunc b}
-        -- where stackFunc = fillRegisters stack
-    -- fillRegisters stack (I.Scope s) =  I.Scope (map stackFunc s)
-    --     -- where stackFunc = fillRegisters stack
-    -- fillRegisters stack vs@I.VariableScope{I.name=n, I.assignment=a, I.body=b} = (vs{I.assignment=map stackFunc a, I.body=map stackFunc b})
-    --     where stackFunc = fillRegisters (n:stack)
-    -- fillRegisters stack vs@I.ConstantScope{I.assignment=a, I.body=b} = (vs{I.assignment=map stackFunc a, I.body=map stackFunc b})
-    --     where stackFunc = fillRegisters stack    

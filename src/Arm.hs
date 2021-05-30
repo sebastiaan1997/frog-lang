@@ -1,11 +1,13 @@
-module Arm(ArmRegister(..), Instruction(..)) where 
+module Arm(ArmRegister(..), Instruction(..), ArmDocument(..), Data(..)) where 
 
 
     data Data = IntegerValue Int
+        | UnsignedIntegerValue Int
         | FloatValue Float
         | StringValue String
+        | LabelReference String
         | Pointer Int
-        | RelativePointer Int
+        | RelativePointer (ArmRegister, Int)
         deriving ( Eq, Show )
 
     -- | Docs for ARM available at https://developer.arm.com/documentation/dui0497/a/the-cortex-m0-instruction-set/instruction-set-summary?lang=en
@@ -27,11 +29,12 @@ module Arm(ArmRegister(..), Instruction(..)) where
         | PC  -- Program Counter register
         deriving ( Eq, Show )
 
-
+    -- | ARM Instruction set definition
     data Instruction = Nop
         | LABEL String
         | ADCS  (ArmRegister, ArmRegister, ArmRegister) -- Add with carry
         | ADD   (ArmRegister, ArmRegister, Data)     -- Add
+        | ADDS  (ArmRegister, ArmRegister, Data)     -- Add
         | ADR   (ArmRegister, String)
         | ANDS  (ArmRegister, ArmRegister, ArmRegister)
         | ASRS  (ArmRegister, ArmRegister, Data)
@@ -47,8 +50,8 @@ module Arm(ArmRegister(..), Instruction(..)) where
         | BL     String     -- Branch link (function call)
         | BLX    ArmRegister
         | BBX    ArmRegister
-        | CMN   (ArmRegister, ArmRegister)  -- Compare
-        | CMP   (ArmRegister, Data)      -- Negative compare
+        | CMN   (ArmRegister, ArmRegister)  -- | Negative compare
+        | CMP   (ArmRegister, Either ArmRegister Data)      -- | Compare
         | CPSID Int
         | CPSIE Int
         | DMB
@@ -82,6 +85,9 @@ module Arm(ArmRegister(..), Instruction(..)) where
         | WFI
         deriving ( Eq, Show )
 
-    data ArmDocument
+    newtype ArmDocument = ArmDocument [Instruction]
+
+    instance Show ArmDocument where
+        show (ArmDocument instr) = foldl (\s i -> show i ++ "\n")  [] instr 
 
     

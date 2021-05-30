@@ -1,13 +1,17 @@
-module IlCompiler(compile) where
+module IlCompiler(compile, compileOptimize) where
     import qualified Ast as A
     import qualified Il as I
     import qualified Cpu as C
+    import qualified IlCpuOptimizer as O
     import Debug.Trace (trace, traceShow)
-    import Data.Maybe (fromMaybe, fromJust)
+    import Data.Maybe (fromMaybe, fromJust, catMaybes)
     import Data.List (elemIndex)
 
     compile :: A.FrogNode -> I.InstructionList
     compile n  =  trace ("[compile-buildStructure] " ++ show (buildStructure n) ++ "\n\n") (I.InstructionList (flattenStructure (map buildStack (buildStructure n))))
+
+    compileOptimize :: C.Cpu -> A.FrogNode -> I.InstructionList
+    compileOptimize c n = (O.fillRegisters c . I.InstructionList . flattenStructure . buildStructure) n
 
 
 
@@ -42,7 +46,7 @@ module IlCompiler(compile) where
         where
             next = compileAssignment var r
 
-    
+
 
     compileAssignment var node = trace ("[compileAssignment] Unknown pattern for variable= " ++ var ++ " => " ++ show node) Nothing
 
@@ -189,7 +193,7 @@ module IlCompiler(compile) where
             offset = getSPOffset var stack
     mapVarToStack _ ref = ref
 
-    
+
 
 
     buildStackImpl :: [String] -> I.Structure -> I.Structure
@@ -216,19 +220,18 @@ module IlCompiler(compile) where
 
     -- buildStackImpl stack vs@I.ConstantScope{I.assignment=a, I.body=b} = (vs{I.assignment=map stackFunc a, I.body=map stackFunc b})
     --     where stackFunc = buildStackImpl stack
-    
-    
 
-    buildStackImpl stack (I.InstructionSequence seq) = case I.mapRefs f (I.InstructionList seq) of
 
-            I.InstructionList lst -> I.InstructionSequence lst
-            _ -> I.InstructionSequence []
-        where
-            f = mapVarToStack stack
 
-    buildStackImpl stack (I.SingleInstruction inst) = I.SingleInstruction (I.mapInstructionRef func inst)
+    buildStackImpl stack (I.InstructionSequence seq) =  (I.InstructionSequence . catMaybes . map (I.mapInstructionRefs func)) seq
         where
             func = mapVarToStack stack
+            e = I.Error{I.name="Could not process instruction", I.body=[I.InstructionSequence seq]}
+
+    buildStackImpl stack (I.SingleInstruction inst) = maybe e  I.SingleInstruction (I.mapInstructionRefs func inst)
+        where
+            func = mapVarToStack stack
+            e = I.Error{I.name="Could not process instruction", I.body=[I.SingleInstruction inst]}
 
 
 
@@ -290,7 +293,7 @@ module IlCompiler(compile) where
             (_, res) = flattenStructureImpl 0 struct
 
 
-    
+
 
 
 
