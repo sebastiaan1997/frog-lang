@@ -1,4 +1,4 @@
-module IlOptimizer where
+module IlOptimizer(optimizeStack) where
     import qualified Il as I
 
 
@@ -14,7 +14,7 @@ module IlOptimizer where
 
 
     optimizeStack :: [I.Instruction] ->  [ I.Instruction ]
-    optimizeStack = foldr optimizeStackFoldlRImpl []
+    optimizeStack = foldr optimizeStackFoldlRImpl [] 
 
 
     -- optimizeForCpu :: [I.Instruction] -> Cpu -> [I.Instruction]

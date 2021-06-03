@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: d49fa171ab0455219a2f29daebc085cfede8deef53353795769ed2e9281ac701
+-- hash: 0d0328969c7c2a7280daedd1459df37d63df44787e34d416d1661a3fd5b03192
 
 name:           frog-lang
 version:        0.1.0.0
@@ -43,7 +43,6 @@ library
       ListTools
       Optimizer
       Parser
-      Printer
       Result
   other-modules:
       Paths_frog_lang

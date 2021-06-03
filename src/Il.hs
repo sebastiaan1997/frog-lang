@@ -14,6 +14,7 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
     instance Show Register where
         show (Register r) = 'R' : show r
     data Reference = Label String
+        | DataLabel String
         | R Register
         | Offset (Reference, Int)
         | StackframeOffset { context :: String, offset :: Int}
@@ -23,6 +24,7 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         | Prev -- Defines that the previous instruction provides this value.
         | Next -- Defines that the next instruction needs the current value.
         | Parent -- Defines if the value should be stored as defined by its parent
+        | ReturnValue
         deriving ( Eq, D.Data )
 
     instance Show Reference where
@@ -36,6 +38,7 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         show Prev = "prev"
         show Next = "next"
         show Parent = "parent"
+        show ReturnValue = "return_value"
 
     data Data = Ref Reference
         | IntegerValue Int
@@ -83,6 +86,9 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         | Lbl String
         | Ret Data
         | RetNone
+        | RoutineInit [Reference]
+        | RToStack [Register]
+        | StackToR [Register]
         deriving ( Eq, D.Data )
 
     replaceInstructionData :: Instruction -> [Maybe Data] -> Maybe Instruction
@@ -217,10 +223,13 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         show (Remove ref)   = "\tREM " ++ show ref
         show Set{store=sto, source=src}    = "\tSET " ++ show sto ++ ", " ++ show src
         show (Lbl l) = '.' : l
-        show (Ret t) = "\tRET" ++ show t
+        show (Ret t) = "\tRET " ++ show t
         show RetNone = "\tRETNONE"
         show (LoadToReg(st, src))  = "\tLDREG " ++ show st ++ ", " ++ show src
         show (StoreFromReg(st, src)) = "\tLSTOREG " ++ show st ++ ", " ++ show src
+        show (RoutineInit args) = "\tROUTINE_INIT [" ++ (foldr (\l r -> show l ++ ", "++ r ) "" args) ++ "]"
+        show (RToStack registers) = "\tRTOSTACK [" ++ (foldr (\l r -> show l ++ r ) "" registers)  ++ "]"
+        show (StackToR registers) = "\tSTACKTOR [" ++ (foldr (\l r -> show l ++ r ) "" registers) ++ "]"
 
     newtype InstructionList = InstructionList [ Instruction ]
 

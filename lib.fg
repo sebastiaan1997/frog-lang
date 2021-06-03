@@ -1,0 +1,17 @@
+fn odd(n) {
+    if( n== 0) {
+        return false;
+    }
+    n--;
+    return even(n);
+    
+}
+
+
+fn even(n) {
+    if(n== 0) {
+        return true;
+    }
+    n--;
+    return odd(n);
+}

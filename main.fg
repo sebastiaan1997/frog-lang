@@ -5,7 +5,7 @@ rt main() {
     let i = 0;
     if(condition){
         print_hello();
-        while (i < 1000000) {
+        while (i < 254) {
             i++;
         }
     }

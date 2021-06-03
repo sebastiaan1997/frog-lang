@@ -47,7 +47,7 @@ module Ast(FrogNode(..), applyConditional, applyChilderen, replaceNodes, append,
     applyConditional condition functor target = if condition target then functor target else Just target
 
 
-    -- Apply function to childeren
+    -- Apply function to childerenconvertData
     applyChilderen :: (FrogNode -> Maybe FrogNode) -> FrogNode -> Maybe FrogNode
     applyChilderen functor (Sequence sequence) = Just (Sequence (mapMaybe functor sequence))
     applyChilderen functor ConstDeclaration{ name=n, assignment=a, typename=t} = case functor a of

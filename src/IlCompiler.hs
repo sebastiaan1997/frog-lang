@@ -1,17 +1,20 @@
-module IlCompiler(compile, compileOptimize) where
+{-# LANGUAGE LambdaCase #-}
+module IlCompiler(compile, compileOptimize, buildStructure) where
     import qualified Ast as A
     import qualified Il as I
     import qualified Cpu as C
-    import qualified IlCpuOptimizer as O
+    import qualified IlCpuOptimizer as CO
+    import qualified IlOptimizer as O
+
     import Debug.Trace (trace, traceShow)
-    import Data.Maybe (fromMaybe, fromJust, catMaybes)
+    import Data.Maybe (fromMaybe, fromJust, catMaybes, mapMaybe)
     import Data.List (elemIndex)
 
     compile :: A.FrogNode -> I.InstructionList
-    compile n  =  trace ("[compile-buildStructure] " ++ show (buildStructure n) ++ "\n\n") (I.InstructionList (flattenStructure (map buildStack (buildStructure n))))
+    compile n  =  trace ("[compile-buildStructure] " ++ show (buildStructure n) ++ "\n\n") ((I.InstructionList . foldConditions) (flattenStructure (map buildStack (buildStructure n))))
 
     compileOptimize :: C.Cpu -> A.FrogNode -> I.InstructionList
-    compileOptimize c n = (O.fillRegisters c . I.InstructionList . flattenStructure . buildStructure) n
+    compileOptimize c = CO.fillRegisters c  .  I.InstructionList . O.optimizeStack . foldConditions . flattenStructure . buildStructure
 
 
 
@@ -27,28 +30,34 @@ module IlCompiler(compile, compileOptimize) where
 
 
 
-    compileAssignment :: String -> A.FrogNode -> Maybe [ I.Instruction ]
-    compileAssignment "" _ = Nothing
-    compileAssignment var (A.BooleanLiteral b) = Just [ I.PushVar { I.store=I.Variable var, I.source = I.BooleanValue b} ]
-    compileAssignment var (A.NumericLiteral f) = Just [ I.PushVar { I.store=I.Variable var, I.source = I.IntegerValue (round f)} ]
-    compileAssignment var (A.IntegerLiteral i) = Just [ I.PushVar { I.store=I.Variable var, I.source = I.IntegerValue i }]
-    compileAssignment var (A.Variable v) = Just [ I.PushVar { I.store=I.Variable var, I.source = I.Ref (I.Variable v)}]
-    compileAssignment var infx@A.InfixCall {A.lhs=l, A.target=t, A.rhs=r}  = case (t, convertData l, convertData r, next) of
-            ("+", Just lVal, Just rVal, Nothing) -> Just [ I.Add { I.store=I.Variable var, I.lhs=lVal, I.rhs=rVal}]
-            ("+", Just lVal, Nothing, Just n)    -> Just  (n ++ [I.Add { I.store=I.Variable var, I.lhs=lVal, I.rhs=I.Ref (I.Variable var) }])
-            ("-", Just lVal, Just rVal, Nothing) -> Just [ I.Sub { I.store=I.Variable var, I.lhs=lVal, I.rhs=rVal}]
-            ("-", Just lVal, Nothing, Just n)    -> Just  (n ++ [I.Sub { I.store=I.Variable var, I.lhs=lVal, I.rhs=I.Ref (I.Variable var) }])
-            ("*", Just lVal, Just rVal, Nothing) -> Just [ I.Mul { I.store=I.Variable var, I.lhs=lVal, I.rhs=rVal}]
-            ("*", Just lVal, Nothing, Just n)    -> Just  (n ++ [I.Mul { I.store=I.Variable var, I.lhs=lVal, I.rhs=I.Ref (I.Variable var) }])
-            ("/", Just lVal, Just rVal, Nothing) -> Just [ I.Div { I.store=I.Variable var, I.lhs=lVal, I.rhs=rVal}]
-            ("/", Just lVal, Nothing, Just n)    -> Just  (n ++ [I.Div { I.store=I.Variable var, I.lhs=lVal, I.rhs=I.Ref (I.Variable var) }])
-            _ -> Nothing
+
+
+
+    compileAssignment :: I.Reference -> A.FrogNode -> Maybe [ I.Instruction ]
+    -- compileAssignment "" _ = Nothing
+    compileAssignment var c@A.FunctionCall{A.target=fn, A.params=[]} = Just [ I.Call{I.routine=I.Label fn, I.args=[], I.storeReturn=Just var}]
+    compileAssignment var c@A.FunctionCall{A.target=fn, A.params=p} = Just [ I.Call{I.routine=I.Label fn, I.args=mapMaybe convertData p, I.storeReturn=Just var}]
+
+    compileAssignment var (A.BooleanLiteral b) = Just [ I.PushVar { I.store=var, I.source = I.BooleanValue b} ]
+    compileAssignment var (A.NumericLiteral f) = Just [ I.PushVar { I.store=var, I.source = I.IntegerValue (round f)} ]
+    compileAssignment var (A.IntegerLiteral i) = Just [ I.PushVar { I.store=var, I.source = I.IntegerValue i }]
+    compileAssignment var (A.Variable v) = Just [ I.PushVar { I.store=var, I.source = I.Ref (I.Variable v)}]
+    compileAssignment var infx@A.InfixCall {A.lhs=l, A.target=t, A.rhs=r}  = traceShow infx (case (t, convertData l, convertData r, next) of
+            ("+", Just lVal, Just rVal, Nothing) -> Just [ I.Add { I.store=var, I.lhs=lVal, I.rhs=rVal}]
+            ("+", Just lVal, Nothing, Just n)    -> Just  (n ++ [I.Add { I.store= var, I.lhs=lVal, I.rhs=I.Ref var }])
+            ("-", Just lVal, Just rVal, Nothing) -> Just [ I.Sub { I.store=var, I.lhs=lVal, I.rhs=rVal}]
+            ("-", Just lVal, Nothing, Just n)    -> Just  (n ++ [I.Sub { I.store=var, I.lhs=lVal, I.rhs=I.Ref ( var) }])
+            ("*", Just lVal, Just rVal, Nothing) -> Just [ I.Mul { I.store=var, I.lhs=lVal, I.rhs=rVal}]
+            ("*", Just lVal, Nothing, Just n)    -> Just  (n ++ [I.Mul { I.store=var, I.lhs=lVal, I.rhs=I.Ref var }])
+            ("/", Just lVal, Just rVal, Nothing) -> Just [ I.Div { I.store= var, I.lhs=lVal, I.rhs=rVal}]
+            ("/", Just lVal, Nothing, Just n)    -> Just  (n ++ [I.Div { I.store= var, I.lhs=lVal, I.rhs=I.Ref ( var) }])
+            b -> trace ("[compileAssignment] failed" ++ show b) Nothing)
         where
             next = compileAssignment var r
 
 
 
-    compileAssignment var node = trace ("[compileAssignment] Unknown pattern for variable= " ++ var ++ " => " ++ show node) Nothing
+    compileAssignment var node = trace ("[compileAssignment] Unknown pattern for variable= " ++ show var ++ " => " ++ show node) Nothing
 
     compileIfCondition :: A.FrogNode -> Maybe [I.Instruction]
     compileIfCondition (A.Variable var) = Just [ I.Cmp {I.lhs=I.Ref (I.Variable var), I.rhs=I.BooleanValue True} ]
@@ -75,7 +84,7 @@ module IlCompiler(compile, compileOptimize) where
 
 
     buildStructure (A.Statement stmt) = buildStructure stmt
-    buildStructure A.Assignment { A.target=t, A.assignment=a } = case compileAssignment t a of
+    buildStructure A.Assignment { A.target=t, A.assignment=a } = case compileAssignment (I.Label t) a of
         Just instructions -> [I.InstructionSequence instructions]
         _ -> []
 
@@ -116,19 +125,30 @@ module IlCompiler(compile, compileOptimize) where
         (_, _) -> []
 
     buildStructure (A.FunctionReturn Nothing) = [ I.SingleInstruction I.RetNone ]
+
+    buildStructure (A.FunctionReturn (Just c@A.FunctionCall{})) = case compileAssignment I.ReturnValue c of
+        Just instr -> [I.InstructionSequence instr]
+        _ -> []
+
+
     buildStructure (A.FunctionReturn (Just val)) = case convertData val of
         Just value -> [ I.SingleInstruction (I.Ret value) ]
         _ -> [ I.SingleInstruction I.RetNone ]
 
     buildStructure (A.Sequence seq) = case seq of
-        (A.VarDeclaration {A.name=n, A.assignment=a, A.typename=t} : xs) ->  [I.VariableScope {I.name=n, I.typename=t, I.assignment=[I.InstructionSequence (fromMaybe [] (compileAssignment n a))], I.body=buildStructure (A.Sequence xs)}]
-        (A.ConstDeclaration  {A.name=n, A.assignment=a, A.typename=t} : xs) -> [I.ConstantScope {I.name=n, I.typename=t, I.assignment=[I.InstructionSequence (fromJust (compileAssignment n a))],  I.body=buildStructure (A.Sequence xs)}]
+        (A.VarDeclaration {A.name=n, A.assignment=a, A.typename=t} : xs) ->  [I.VariableScope {I.name=n, I.typename=t, I.assignment=[I.InstructionSequence (fromMaybe [] (compileAssignment (I.Variable n) a))], I.body=buildStructure (A.Sequence xs)}]
+        (A.ConstDeclaration  {A.name=n, A.assignment=a, A.typename=t} : xs) -> [I.ConstantScope {I.name=n, I.typename=t, I.assignment=[I.InstructionSequence (fromJust (compileAssignment (I.Variable n) a))],  I.body=buildStructure (A.Sequence xs)}]
         (x:xs) -> buildStructure x ++ buildStructure (A.Sequence xs)
         [] -> []
 
-    buildStructure A.RoutineDefinition {A.name=n, A.params=p, A.body=b} = [I.Routine { I.name=n, I.params=[], I.body= buildStructure (A.Sequence b)}]
-    buildStructure A.FunctionDefinition {A.name=n, A.params=p, A.body=b} = [I.Routine { I.name=n, I.params=[], I.body= buildStructure (A.Sequence b)}]
-
+    buildStructure A.RoutineDefinition {A.name=n, A.params=p, A.body=b} = [I.Routine { I.name=n, I.params=paramNames, I.body= buildStructure (A.Sequence b)}]
+        where
+            paramData =  mapMaybe convertData p
+            paramNames = mapMaybe (\x -> case x of (I.Ref (I.Variable var)) -> Just var; _ -> Nothing) paramData
+    buildStructure A.FunctionDefinition {A.name=n, A.params=p, A.body=b} = [I.Routine { I.name=n, I.params=paramNames, I.body= buildStructure (A.Sequence b)}]
+        where
+            paramData =  mapMaybe convertData p
+            paramNames = mapMaybe (\x -> case x of (I.Ref (I.Variable var)) -> Just var; _ -> Nothing) paramData
     -- buildStructure A.IfStatement { A.condition = c, A.body=b, A.next=Nothing } = []
 
     buildStructure A.FunctionCall{ A.target=funcName, A.params=args} = case args of
@@ -161,6 +181,9 @@ module IlCompiler(compile, compileOptimize) where
         Just cInst -> [ I.FiniteLoop {I.condition=[I.InstructionSequence cInst], I.body=buildStructure (A.Sequence b) } ]
         Just [] -> [ I.InfiniteLoop { I.body=buildStructure (A.Sequence b) } ]
         _ -> []
+    buildStructure A.Nop = []
+
+    buildStructure n = trace ("buildStructure failed -> " ++ show n) []
 
     -- createStackFrames :: [ I.Structure ] -> [ I.Structure ]
     -- createStackFrames = createStackFramesImpl [ ]
@@ -223,7 +246,7 @@ module IlCompiler(compile, compileOptimize) where
 
 
 
-    buildStackImpl stack (I.InstructionSequence seq) =  (I.InstructionSequence . catMaybes . map (I.mapInstructionRefs func)) seq
+    buildStackImpl stack (I.InstructionSequence seq) =  (I.InstructionSequence . mapMaybe (I.mapInstructionRefs func)) seq
         where
             func = mapVarToStack stack
             e = I.Error{I.name="Could not process instruction", I.body=[I.InstructionSequence seq]}
@@ -258,26 +281,28 @@ module IlCompiler(compile, compileOptimize) where
             (bodyI, bodyInst) = flattenStructureImpl (i+1) b
             (nextI, nextInst) = flattenStructureImpl bodyI xs
 
-    flattenStructureImpl i (I.Routine{I.name=n, I.body=b}: xs) = (nextI, (I.Lbl n : bInst) ++ [I.RetNone] ++ nextInst)
+    flattenStructureImpl i (I.Routine{I.name=n, I.body=b, I.params=p}: xs) = (nextI, (I.Lbl n : I.RoutineInit (map I.Variable p) : bInst) ++ (if isClosed then [] else[I.RetNone]) ++ nextInst)
         where
         (bI, bInst) =  flattenStructureImpl i b
+        isClosed = case last bInst of I.RetNone -> True; I.Ret _ -> True; I.Call{I.storeReturn=Just I.ReturnValue} -> True; _ -> False
         (nextI, nextInst) = flattenStructureImpl bI xs
 
     flattenStructureImpl i (I.ConditionalBranch{I.condition=c, I.trueBranch=tb, I.falseBranch=fb} : xs) = case (tb, fb) of
         ([], []) -> (i, [])
-        ([], fBranch) -> (falseI + 1, condtionInstr ++ [ I.BC { I.conditionType=I.Equal, I.target = I.Label ("endif_" ++ show i)}] ++ falseInst ++ [I.Lbl ("endif_" ++ show i)]  )
-        (tBranch, []) -> (trueI + 1, condtionInstr ++ [ I.BC { I.conditionType=I.NotEqual, I.target = I.Label ("endif_" ++ show i)}] ++ trueInst ++ [I.Lbl ("endif_" ++ show i)]  )
-        (tBranch, fBranch) -> (falseI + 1, condtionInstr ++ [ I.BC { I.conditionType=I.NotEqual, I.target = I.Label ("elseif_" ++ show i)}] ++ trueInst ++ [I.Jump (I.Label ("endif_" ++ show i)), I.Lbl ("ifelse" ++ show i)] ++ falseInst ++ [I.Lbl ("endif" ++ show i )] )
+        ([], fBranch) -> (nextI + 1, condtionInstr ++ [ I.BC { I.conditionType=I.Equal, I.target = I.Label ("endif_" ++ show i)}] ++ falseInst ++ [I.Lbl ("endif_" ++ show i)] ++ nextInst  )
+        (tBranch, []) -> (nextI + 1, condtionInstr ++ [ I.BC { I.conditionType=I.NotEqual, I.target = I.Label ("endif_" ++ show i)}] ++ trueInst ++ [I.Lbl ("endif_" ++ show i)] ++ nextInst )
+        (tBranch, fBranch) -> (nextI + 1, condtionInstr ++ [ I.BC { I.conditionType=I.NotEqual, I.target = I.Label ("elseif_" ++ show i)}] ++ trueInst ++ [I.Jump (I.Label ("endif_" ++ show i)), I.Lbl ("ifelse" ++ show i)] ++ falseInst ++ [I.Lbl ("endif" ++ show i )]  ++ nextInst)
         where
             (conditionI, condtionInstr) = flattenStructureImpl (i + 1) c
             (trueI, trueInst) = flattenStructureImpl conditionI tb
             (falseI, falseInst) = flattenStructureImpl trueI fb
+            (nextI, nextInst) = flattenStructureImpl falseI xs
 
 
 
 
     flattenStructureImpl i [] = (i, [])
-    flattenStructureImpl i (I.VariableScope {I.name=n, I.assignment=a, I.body=b} : xs) = (i, assignmentInst ++ bodyInst ++ nextInst ++ [I.PopVar [I.Variable n]])
+    flattenStructureImpl i (I.VariableScope {I.name=n, I.assignment=a, I.body=b} : xs) = trace ("[flattenStructureImpl, VariableScope.assignment] " ++ show assignmentInst) (i, assignmentInst ++ bodyInst ++ nextInst ++ [I.PopVar [I.Variable n]])
         where
             (assignmenti, assignmentInst) = flattenStructureImpl i a
             (bodyI, bodyInst) = flattenStructureImpl assignmenti b
@@ -292,6 +317,19 @@ module IlCompiler(compile, compileOptimize) where
         where
             (_, res) = flattenStructureImpl 0 struct
 
+
+    foldConditions :: [I.Instruction] -> [I.Instruction]
+    foldConditions = foldr foldRConditions []
+
+
+    foldRConditions :: I.Instruction -> [I.Instruction] -> [I.Instruction]
+
+    foldRConditions I.CmpStmtNext{I.lhs=l, I.rhs=r, I.conditionType=cType} (b@I.B{} : xs) = I.Cmp{I.lhs=l, I.rhs=r} : b{I.conditionType=cType} : xs
+    foldRConditions I.CmpStmtNext{I.lhs=l, I.rhs=r, I.conditionType=cType} (b@I.BC{} : xs) = I.Cmp{I.lhs=l, I.rhs=r} : b : xs
+    foldRConditions I.CmpStmtNext{I.lhs=l, I.rhs=r, I.conditionType=cType} ((I.Jump jumpTarget) : xs) = I.Cmp{I.lhs=l, I.rhs=r} : I.BC{I.conditionType=cType, I.target=jumpTarget} : xs
+
+
+    foldRConditions lhs rhs = lhs:rhs
 
 
 
