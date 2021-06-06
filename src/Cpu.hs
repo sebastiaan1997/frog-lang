@@ -2,34 +2,35 @@
 module Cpu(RegisterType(..), Register(..), Cpu(..), armCortexM0, getRegistersByType) where
 
 
-
-    data RegisterType = GeneralPurpose
-        | Data
-        | StackPointer
-        | ProgramCounter
-        | LinkRegister
+    -- | Common register types
+    data RegisterType = GeneralPurpose -- GP, can be used for all things, can load and store
+        | Data -- Can only store data, cannot be used for maths.
+        | StackPointer -- The current pointer for the stack.
+        | ProgramCounter -- The program counter
+        | LinkRegister -- The return adress 
         deriving(Show, Eq)
 
-
+    -- | Describes a register.
     data Register = Register{
-        registerIndex :: Int,
-        registerName :: String,
-        size :: Int,
-        registerType :: RegisterType
+        registerIndex :: Int, -- The index of the register.
+        registerName :: String, -- The name of the register
+        size :: Int, -- The size in bits of the register
+        registerType :: RegisterType -- The type of the register, as described above.
     }
         deriving(Show, Eq)
-
+    -- | Abstract description of a CPU.
     data Cpu = Cpu{
-        cpuName :: String,
-        dataSize :: Int,
-        addrSize :: Int,
-        registers :: [ Register ]
+        cpuName :: String, -- The name of the CPU
+        dataSize :: Int, -- The max size of data that fits into a register.
+        addrSize :: Int, -- The size of an adress/pointer
+        registers :: [ Register ] -- The available registers.
     }
 
-
+    
     armCortexM0 :: Cpu
+    -- | The description of a ARM Cortex M0 CPU
     armCortexM0 = Cpu{
-        cpuName="Arm CORTEX-M0",
+        cpuName="Arm CORTEX-M0", -- The internal name
         dataSize = 32,
         addrSize = 32,
         registers = [
@@ -51,32 +52,13 @@ module Cpu(RegisterType(..), Register(..), Cpu(..), armCortexM0, getRegistersByT
             Register { registerIndex=15, registerName="PC",  size=32, registerType=LinkRegister }
         ]
     }
-
     getRegistersByType :: RegisterType -> Cpu -> [Register]
+    -- | Gets registers of a CPU by type
     getRegistersByType regType Cpu{registers=r} = filter (\case
                 Register{registerType=rt} -> rt == regType
                 _ -> False) r
 
     
     countRegisters ::  RegisterType -> Cpu -> Int
+    -- | Counts registers by type.
     countRegisters regType cpu = length (getRegistersByType regType cpu)
-
-    
-    
-
-
-
-    
-
-
-
-    -- countRegisters :: Cpu -> Int
-    -- countRegisters Cpu{registers=r} = length filter (\case Register{registerType=GeneralPurpose}) r
-
-
-
-
-
-
-
-

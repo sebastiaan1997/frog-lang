@@ -1,7 +1,7 @@
 
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..), InstructionList(..), mapInstructionsInStructure, Register(..), mapInstructionListRefs, mapInstructionRefs, extractInstructionData, replaceInstructionData, dataRef, dataRefPayload, mapInstructionRefPayload) where
+module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..), InstructionList(..), mapInstructionsInStructure, Register(..), mapInstructionListRefs, mapInstructionRefs, extractInstructionData, replaceInstructionData, dataRef, dataRefPayload, mapInstructionRefPayload, ILDocument(..)) where
 
     import Numeric (showHex)
     import qualified Data.Data as D
@@ -235,44 +235,49 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
 
     instance Show InstructionList where
         show (InstructionList lst) = foldl (\l r -> l ++ show r ++ "\n") " " lst
-    data BranchType = Unconditional
-        | Greater
-        | GreaterEqual
-        | Lesser
-        | LesserEqual
-        | Equal
-        | NotEqual
-        | Undefined
+
+
+    data ILDocument = ILDocument {exports :: [String], rw :: M.Map String Data, ro :: M.Map String Data, instructions :: InstructionList}
+        deriving ( Show )
+
+    data BranchType = Unconditional -- Branch should be executed unconditionally.
+        | Greater -- Branch should be executed, only if the compare condition equals to greater than
+        | GreaterEqual -- Branch should be executed, only if the compare condition equals to greater than or equal
+        | Lesser -- Branch should be executed, only if the compare condition equals to lesser than
+        | LesserEqual -- Branch should be executed, only if the compare condition equals to lesser than or equal.
+        | Equal -- Branch should be executed, only if the compare condition equals to equal.
+        | NotEqual -- Branch should be executed, only if the compare condition equals to not equal.
+        | Undefined -- Branch condition is undefined, undefined behavriour 
         deriving ( Eq, Show, D.Data )
 
-    data Structure = SingleInstruction Instruction
-        | InstructionSequence [ Instruction ]
-        | Routine { name :: String, body :: [Structure], params :: [ String ] }
-        | ConditionalBranch { condition :: [ Structure ], trueBranch :: [ Structure ] , falseBranch :: [ Structure ] }
-        | Branch { branchType :: BranchType, compareArgs :: (Reference, Reference), match :: Structure  }
-        | FiniteLoop { condition :: [ Structure ], body :: [Structure] }
-        | InfiniteLoop { body :: [Structure] }
-        | Scope [ Structure ]
-        | VariableScope { name :: String, typename :: String, assignment :: [Structure], body :: [Structure]}
-        | ConstantScope { name :: String, typename :: String, assignment :: [Structure], body :: [Structure]}
-        | Error { name :: String, body :: [Structure]}
+    data Structure = SingleInstruction Instruction -- Represents a single instruction
+        | InstructionSequence [ Instruction ] -- Represents multiple registers.
+        | Routine { name :: String, body :: [Structure], params :: [ String ] } -- Represents a routine.
+        | ConditionalBranch { condition :: [ Structure ], trueBranch :: [ Structure ] , falseBranch :: [ Structure ] } -- Represents branch with two possible flows of execution.
+        | Branch { branchType :: BranchType, compareArgs :: (Reference, Reference), match :: Structure  } --  Represents a branch with one flow of execution
+        | FiniteLoop { condition :: [ Structure ], body :: [Structure] } -- Represents a loop with a given end condition.
+        | InfiniteLoop { body :: [Structure] } -- Represents an endless loop.
+        | Scope [ Structure ] -- Represents a scope.
+        | VariableScope { name :: String, typename :: String, assignment :: [Structure], body :: [Structure]} -- Represents a scope of a variable.
+        | ConstantScope { name :: String, typename :: String, assignment :: [Structure], body :: [Structure]} -- Represents a scope of a constant.
+        | Error { name :: String, body :: [Structure]} -- Represents an error.
         deriving ( Eq, Show )
 
+    -- | Maps all sub structures to a given function.
     mapStructure :: (Structure -> Structure) -> Structure -> Structure
+    mapStructure func rt@Routine{body=b} = func (rt{body= map func b}) -- Maps routine and body
+    mapStructure func rt@ConditionalBranch{trueBranch=t, falseBranch=f} = func (rt{trueBranch=map func t, falseBranch=map func f}) -- Maps the Conditional branch, the true branch and the false branch
+    mapStructure func b@Branch{match=m} = func b{match=func m} -- Maps the match and the branch
+    mapStructure func l@FiniteLoop{body=b, condition=cond} = func l{condition=map func cond,body=map func b} -- Maps FiniteLoop the body and the condition
+    mapStructure func l@InfiniteLoop{body=b} = func l{body=map func b} --Maps InfiniteLoop and body
+    mapStructure func (Scope s) = func (Scope (map func s)) -- Maps scope
+    mapStructure func vs@VariableScope{assignment=a, body=b} = func (vs{assignment=map func a, body=map func b}) -- Maps variable scope, assignment and body
+    mapStructure func vs@ConstantScope{assignment=a, body=b} = func (vs{assignment=map func a, body=map func b}) -- Maps contstant scope, assignment and body
+    mapStructure func struct = func struct -- Just map the structure.
 
-    mapStructure func rt@Routine{body=b} = func (rt{body= map func b})
-    mapStructure func rt@ConditionalBranch{trueBranch=t, falseBranch=f} = func (rt{trueBranch=map func t, falseBranch=map func f})
-    mapStructure func b@Branch{match=m} = func b{match=func m}
-    mapStructure func l@FiniteLoop{body=b, condition=cond} = func l{condition=map func cond,body=map func b}
-    mapStructure func l@InfiniteLoop{body=b} = func l{body=map func b}
-    mapStructure func (Scope s) = func (Scope (map func s))
-    mapStructure func vs@VariableScope{assignment=a, body=b} = func (vs{assignment=map func a, body=map func b})
-    mapStructure func vs@ConstantScope{assignment=a, body=b} = func (vs{assignment=map func a, body=map func b})
-    mapStructure func struct = func struct
-
-
+    -- | Maps instructions in structure.
     mapInstructionsInStructure :: (Instruction -> Instruction) -> Structure -> Structure
-    mapInstructionsInStructure func = mapStructure newFunc
+    mapInstructionsInStructure func = mapStructure newFunc -- Maps instructions
         where
             newFunc = \case
                 SingleInstruction si -> SingleInstruction (func si)

@@ -1,7 +1,5 @@
 .main
 	PUSH [LR]
-	MOV R0, #1
-	MOV R1, #0
 	CMP R0, #1
 	BNE .endif_0
 	PUSH [R0,R1,R2]
@@ -11,6 +9,26 @@
 	ADD R1, R1, #1
 	CMP R1, #254
 	BLT .loop_1
+.loop_2
+	ADD R1, R1, #1
+	CMP R1, #254
+	BLT .loop_2
 .endif_0
 	POP [PC]
+.main
+	PUSH [LR]
+	CMP R0, #1
+	BNE .endif_4
+	PUSH [R0,R1,R2]
+	BL print_hello
+	POP [R0,R1,R2]
+.loop_5
+	ADD R1, R1, #1
+	CMP R1, #254
+	BLT .loop_5
+.loop_6
+	ADD R1, R1, #1
+	CMP R1, #254
+	BLT .loop_6
+.endif_4
 	POP [PC]

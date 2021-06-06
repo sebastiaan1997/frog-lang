@@ -3,7 +3,6 @@ module Main(main) where
     import Parser
 
     import Executor
-    import qualified Compiler as C
     
     import qualified ArmCompiler as AC
     import Debug.Trace ( trace, traceShow )
@@ -25,7 +24,7 @@ module Main(main) where
             print ( Parser.parse  (Lexer.lexFrog contents));
             putStrLn "IL Structure";
             putStrLn "===";
-            print (Il.buildStructure (Parser.parse  (Lexer.lexFrog contents)));
+            print (Il.buildStructure [Parser.parse  (Lexer.lexFrog contents)]);
             putStrLn "IL:";
             putStrLn "====";
             print (Il.compileOptimize C.armCortexM0  (Parser.parse  (Lexer.lexFrog contents)));
@@ -33,7 +32,7 @@ module Main(main) where
             putStrLn "ASM - ARM Cortex M0:";
             putStrLn "====";
             print (AC.compile (Il.compileOptimize C.armCortexM0  (Parser.parse  (Lexer.lexFrog contents))));
-            writeFile ("./" ++ head args ++ ".arm") (show (AC.compile (Il.compileOptimize C.armCortexM0  (Parser.parse  (Lexer.lexFrog contents)))))
+            writeFile ("./" ++ head args ++ ".asm") (show (AC.compile (Il.compileOptimize C.armCortexM0  (Parser.parse  (Lexer.lexFrog contents)))))
 
             -- putStrLn (show (C.build (snd(Parser.parse  (Lexer.lexFrog contents)))));
             -- putStrLn (P.printAsm  (C.build (snd(Parser.parse  (Lexer.lexFrog contents)))))

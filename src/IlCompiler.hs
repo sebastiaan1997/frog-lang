@@ -1,20 +1,39 @@
 {-# LANGUAGE LambdaCase #-}
+
 module IlCompiler(compile, compileOptimize, buildStructure) where
     import qualified Ast as A
     import qualified Il as I
     import qualified Cpu as C
     import qualified IlCpuOptimizer as CO
     import qualified IlOptimizer as O
+    import qualified Data.Map as M
 
-    import Debug.Trace (trace, traceShow)
-    import Data.Maybe (fromMaybe, fromJust, catMaybes, mapMaybe)
+    import Debug.Trace (trace, traceShow, traceShowId)
+    import Data.Maybe (fromMaybe, fromJust, catMaybes, mapMaybe, maybeToList)
     import Data.List (elemIndex)
 
-    compile :: A.FrogNode -> I.InstructionList
-    compile n  =  trace ("[compile-buildStructure] " ++ show (buildStructure n) ++ "\n\n") ((I.InstructionList . foldConditions) (flattenStructure (map buildStack (buildStructure n))))
+    -- | StructureInfo
+    data StructureInfo = StructureInfo { exports :: [String], ro :: M.Map String I.Data, rw :: M.Map String I.Data, structure :: [I.Structure] }
+        deriving (Show)
+    mergeStructureInfo :: StructureInfo -> StructureInfo -> StructureInfo
+    mergeStructureInfo StructureInfo{exports=lhsExports, ro=lhsRo, rw=lhsRw, structure=lhsStructure} StructureInfo{exports=rhsExports, ro=rhsRo, rw=rhsRw, structure=rhsStructure}
+        = StructureInfo{exports=lhsExports++rhsExports, ro=M.union lhsRo rhsRo, rw=M.union lhsRw rhsRw, structure=lhsStructure ++ rhsStructure}
 
-    compileOptimize :: C.Cpu -> A.FrogNode -> I.InstructionList
-    compileOptimize c = CO.fillRegisters c  .  I.InstructionList . O.optimizeStack . foldConditions . flattenStructure . buildStructure
+    -- Defines default empty structure info.
+    emptyStructureInfo :: StructureInfo
+    emptyStructureInfo = StructureInfo{
+        exports=[],
+        ro=M.empty,
+        rw=M.empty,
+        structure=[]
+    }
+
+    -- | Compiles AST to IL Document
+    compile :: A.FrogNode -> I.ILDocument
+    compile n  =  ((foldConditions) (flattenStructure  (buildStructure [n])))
+    -- | Compiles AST and optimize for target to IL Document
+    compileOptimize :: C.Cpu -> A.FrogNode -> I.ILDocument
+    compileOptimize c n = (CO.fillRegisters c . O.optimizeStack . foldConditions . flattenStructure . buildStructure) [n]
 
 
 
@@ -46,11 +65,11 @@ module IlCompiler(compile, compileOptimize, buildStructure) where
             ("+", Just lVal, Just rVal, Nothing) -> Just [ I.Add { I.store=var, I.lhs=lVal, I.rhs=rVal}]
             ("+", Just lVal, Nothing, Just n)    -> Just  (n ++ [I.Add { I.store= var, I.lhs=lVal, I.rhs=I.Ref var }])
             ("-", Just lVal, Just rVal, Nothing) -> Just [ I.Sub { I.store=var, I.lhs=lVal, I.rhs=rVal}]
-            ("-", Just lVal, Nothing, Just n)    -> Just  (n ++ [I.Sub { I.store=var, I.lhs=lVal, I.rhs=I.Ref ( var) }])
+            ("-", Just lVal, Nothing, Just n)    -> Just  (n ++ [I.Sub { I.store=var, I.lhs=lVal, I.rhs=I.Ref var }])
             ("*", Just lVal, Just rVal, Nothing) -> Just [ I.Mul { I.store=var, I.lhs=lVal, I.rhs=rVal}]
             ("*", Just lVal, Nothing, Just n)    -> Just  (n ++ [I.Mul { I.store=var, I.lhs=lVal, I.rhs=I.Ref var }])
             ("/", Just lVal, Just rVal, Nothing) -> Just [ I.Div { I.store= var, I.lhs=lVal, I.rhs=rVal}]
-            ("/", Just lVal, Nothing, Just n)    -> Just  (n ++ [I.Div { I.store= var, I.lhs=lVal, I.rhs=I.Ref ( var) }])
+            ("/", Just lVal, Nothing, Just n)    -> Just  (n ++ [I.Div { I.store= var, I.lhs=lVal, I.rhs=I.Ref var }])
             b -> trace ("[compileAssignment] failed" ++ show b) Nothing)
         where
             next = compileAssignment var r
@@ -77,117 +96,150 @@ module IlCompiler(compile, compileOptimize, buildStructure) where
 
 
 
-    buildStructure :: A.FrogNode -> [I.Structure]
-    -- buildStructure A.ConstDeclaration {A.name=n, A.typename=t, A.assignment=a} = case compileAssignment n a of
-        -- Just instructions -> I.VariableScope { I.name=n, String String Structure}[ I.InstructionSequence instructions] 
-        -- _ -> []
+
+    buildStructure :: [A.FrogNode]  -> StructureInfo
+    -- |Builds a structure in with IL to represent the AST in IL
+    buildStructure = foldr buildStructureImpl emptyStructureInfo
+
+    buildStructureImpl :: A.FrogNode -> StructureInfo -> StructureInfo
+    -- | Unwraps a statement
+    buildStructureImpl (A.Statement stmt) info =  buildStructureImpl stmt info
+    -- | 
+    buildStructureImpl (A.Assignment{ A.target=t, A.assignment=a }) info@StructureInfo{structure=s} = case compileAssignment (I.Variable t) a of
+        Just instructions -> info{structure=I.InstructionSequence instructions : s}
+        _ -> info
 
 
-    buildStructure (A.Statement stmt) = buildStructure stmt
-    buildStructure A.Assignment { A.target=t, A.assignment=a } = case compileAssignment (I.Label t) a of
-        Just instructions -> [I.InstructionSequence instructions]
-        _ -> []
-
-    buildStructure A.InfixCall {A.lhs=l, A.target="+", A.rhs=r} = case (convertData l, convertData r) of
-        (Just dataL, Just dataR) -> [I.SingleInstruction I.Add{I.store=I.Prev, I.lhs=dataL, I.rhs=dataR}]
-        (Just dataL, Nothing) -> I.SingleInstruction I.Add{I.store=I.Prev, I.lhs=dataL, I.rhs=I.Ref I.Next} : buildStructure r
-
-
-    -- | Implement - operator
-    buildStructure A.InfixCall {A.lhs=l, A.target="-", A.rhs=r} = case (convertData l, convertData r) of
-        (Just dataL, Just dataR) -> [I.SingleInstruction I.Sub{I.store=I.Prev, I.lhs=dataL, I.rhs=dataR}]
-        (Just dataL, Nothing) -> I.SingleInstruction I.Sub{I.store=I.Prev, I.lhs=dataL, I.rhs=I.Ref I.Next} : buildStructure r
-
-    buildStructure A.InfixCall {A.lhs=l, A.target="/", A.rhs=r} = case (convertData l, convertData r) of
-        (Just dataL, Just dataR) -> [I.SingleInstruction I.Div{I.store=I.Prev, I.lhs=dataL, I.rhs=dataR}]
-        (Just dataL, Nothing) -> I.SingleInstruction I.Div{I.store=I.Prev, I.lhs=dataL, I.rhs=I.Ref I.Next} : buildStructure r
-
-    buildStructure A.InfixCall {A.lhs=l, A.target="*", A.rhs=r} = case (convertData l, convertData r) of
-        (Just dataL, Just dataR) -> [I.SingleInstruction I.Mul{I.store=I.Prev, I.lhs=dataL, I.rhs=dataR}]
-        (Just dataL, Nothing) -> I.SingleInstruction I.Mul{I.store=I.Prev, I.lhs=dataL, I.rhs=I.Ref I.Next} : buildStructure r
-
-
-    buildStructure A.InfixCall { A.lhs=l, A.target=t, A.rhs=r} = case (convertData l, convertData r) of
-        (Just dataL, Just dataR) -> [I.SingleInstruction I.Call{I.routine=I.Label t, I.args=[dataL, dataR] } ] -- Reference ([Data]){I.store=I.Prev, I.lhs=dataL, I.rhs=dataR}]
-        (Just dataL, Nothing) -> structR ++ [ I.SingleInstruction I.Call{I.routine=I.Label t, I.args=[dataL, I.Ref I.Prev] }]
-        where structR = buildStructure r
-
-    buildStructure A.Block { A.childeren=c } = [I.Scope (foldl1 (++) (map buildStructure c))]
-
-    buildStructure A.Increment { A.lhs=A.Variable var} = [ I.SingleInstruction (I.Increment (I.Variable var)) ]
-    buildStructure A.Decrement { A.lhs=A.Variable var} = [ I.SingleInstruction (I.Decrement (I.Variable var)) ]
-
-    buildStructure A.SelfAssigningInfixCall { A.lhs=A.Variable var, A.target = t,  A.rhs = r } = case (convertData r, t) of
-        (Just op, "+=") -> [ I.SingleInstruction (I.Add{I.store=I.Variable var, I.lhs=I.Ref (I.Variable var), I.rhs=op}) ]
-        (Just op, "-=") -> [ I.SingleInstruction (I.Sub{I.store=I.Variable var, I.lhs=I.Ref (I.Variable var), I.rhs=op}) ]
-        (Just op, "*=") -> [ I.SingleInstruction (I.Mul{I.store=I.Variable var, I.lhs=I.Ref (I.Variable var), I.rhs=op}) ]
-        (Just op, "/=") -> [ I.SingleInstruction (I.Div{I.store=I.Variable var, I.lhs=I.Ref (I.Variable var), I.rhs=op}) ]
-        (_, _) -> []
-
-    buildStructure (A.FunctionReturn Nothing) = [ I.SingleInstruction I.RetNone ]
-
-    buildStructure (A.FunctionReturn (Just c@A.FunctionCall{})) = case compileAssignment I.ReturnValue c of
-        Just instr -> [I.InstructionSequence instr]
-        _ -> []
-
-
-    buildStructure (A.FunctionReturn (Just val)) = case convertData val of
-        Just value -> [ I.SingleInstruction (I.Ret value) ]
-        _ -> [ I.SingleInstruction I.RetNone ]
-
-    buildStructure (A.Sequence seq) = case seq of
-        (A.VarDeclaration {A.name=n, A.assignment=a, A.typename=t} : xs) ->  [I.VariableScope {I.name=n, I.typename=t, I.assignment=[I.InstructionSequence (fromMaybe [] (compileAssignment (I.Variable n) a))], I.body=buildStructure (A.Sequence xs)}]
-        (A.ConstDeclaration  {A.name=n, A.assignment=a, A.typename=t} : xs) -> [I.ConstantScope {I.name=n, I.typename=t, I.assignment=[I.InstructionSequence (fromJust (compileAssignment (I.Variable n) a))],  I.body=buildStructure (A.Sequence xs)}]
-        (x:xs) -> buildStructure x ++ buildStructure (A.Sequence xs)
-        [] -> []
-
-    buildStructure A.RoutineDefinition {A.name=n, A.params=p, A.body=b} = [I.Routine { I.name=n, I.params=paramNames, I.body= buildStructure (A.Sequence b)}]
+    buildStructureImpl  A.InfixCall{A.lhs=l, A.target="+", A.rhs=r} info@StructureInfo{structure=s} = case (convertData l, convertData r) of
+        (Just dataL, Just dataR) -> info{structure=I.SingleInstruction I.Add{I.store=I.Prev, I.lhs=dataL, I.rhs=dataR} : s}
+        (Just dataL, Nothing) ->  mergeStructureInfo info{structure=I.SingleInstruction I.Add{I.store=I.Prev, I.lhs=dataL, I.rhs=I.Ref I.Next} : (structure rinst)  ++ s} rinst{structure=[]}
         where
-            paramData =  mapMaybe convertData p
-            paramNames = mapMaybe (\x -> case x of (I.Ref (I.Variable var)) -> Just var; _ -> Nothing) paramData
-    buildStructure A.FunctionDefinition {A.name=n, A.params=p, A.body=b} = [I.Routine { I.name=n, I.params=paramNames, I.body= buildStructure (A.Sequence b)}]
+            rinst = buildStructure [r]
+
+
+    buildStructureImpl  A.InfixCall {A.lhs=l, A.target="-", A.rhs=r} info@StructureInfo{structure=s} = case (convertData l, convertData r) of
+        (Just dataL, Just dataR) -> info{structure=I.SingleInstruction I.Sub{I.store=I.Prev, I.lhs=dataL, I.rhs=dataR} : s}
+        (Just dataL, Nothing) ->  mergeStructureInfo info{structure=I.SingleInstruction I.Sub{I.store=I.Prev, I.lhs=dataL, I.rhs=I.Ref I.Next} : (structure rinst)  ++ s} rinst{structure=[]}
         where
-            paramData =  mapMaybe convertData p
-            paramNames = mapMaybe (\x -> case x of (I.Ref (I.Variable var)) -> Just var; _ -> Nothing) paramData
-    -- buildStructure A.IfStatement { A.condition = c, A.body=b, A.next=Nothing } = []
+            rinst = buildStructure [r]
 
-    buildStructure A.FunctionCall{ A.target=funcName, A.params=args} = case args of
-        [] -> [ I.SingleInstruction I.Call{ I.storeReturn = Nothing, I.routine=I.Label funcName, I.args=[] } ]
-        _ -> [ ]
+    buildStructureImpl  A.InfixCall {A.lhs=l, A.target="*", A.rhs=r} info@StructureInfo{structure=s} = case (convertData l, convertData r) of
+        (Just dataL, Just dataR) -> info{structure=I.SingleInstruction I.Mul{I.store=I.Prev, I.lhs=dataL, I.rhs=dataR}: s}
+        (Just dataL, Nothing) ->  mergeStructureInfo info{structure=I.SingleInstruction I.Mul{I.store=I.Prev, I.lhs=dataL, I.rhs=I.Ref I.Next} : (structure rinst)  ++ s} rinst{structure=[]}
+        where
+            rinst = buildStructure [r]
 
 
-    buildStructure A.IfStatement { A.condition = c, A.body=body, A.next= n} =
+    buildStructureImpl  A.InfixCall {A.lhs=l, A.target="/", A.rhs=r} info@StructureInfo{structure=s} = case (convertData l, convertData r) of
+        (Just dataL, Just dataR) -> info{structure=I.SingleInstruction I.Div{I.store=I.Prev, I.lhs=dataL, I.rhs=dataR}:s}
+        (Just dataL, Nothing) ->  mergeStructureInfo info{structure=I.SingleInstruction I.Div{I.store=I.Prev, I.lhs=dataL, I.rhs=I.Ref I.Next} : (structure rinst)  ++ s} rinst{structure=[]}
+        where
+            rinst = buildStructure [r]
+
+    -- buildStructureImpl A.Increment { A.lhs=A.Variable var } = [ I.SingleInstruction (I.Increment (I.Variable var)) ]
+    -- buildStructureImpl A.Decrement { A.lhs=A.Variable var } = [ I.SingleInstruction (I.Decrement (I.Variable var)) ] 
+
+    buildStructureImpl A.Block { A.childeren=c } info@StructureInfo{structure=s} = mergeStructureInfo info{structure=(I.Scope . structure) b : s} b{structure=[]}
+        where
+            b = buildStructure c
+
+    buildStructureImpl A.Increment { A.lhs=A.Variable var} info@StructureInfo{structure=s}
+        = info{structure= I.SingleInstruction (I.Increment (I.Variable var)) : s}
+    buildStructureImpl A.Decrement { A.lhs=A.Variable var} info@StructureInfo{structure=s}
+        = info{structure= I.SingleInstruction (I.Decrement (I.Variable var)) : s}
+
+    buildStructureImpl A.SelfAssigningInfixCall { A.lhs=A.Variable var, A.target = t,  A.rhs = r }  info@StructureInfo{structure=s}
+        = case (convertData r, t) of
+            (Just op, "+=") -> info{structure=I.SingleInstruction (I.Add{I.store=I.Variable var, I.lhs=I.Ref (I.Variable var), I.rhs=op}):s}
+            (Just op, "-=") -> info{structure=I.SingleInstruction (I.Sub{I.store=I.Variable var, I.lhs=I.Ref (I.Variable var), I.rhs=op}):s}
+            (Just op, "*=") -> info{structure=I.SingleInstruction (I.Mul{I.store=I.Variable var, I.lhs=I.Ref (I.Variable var), I.rhs=op}):s}
+            (Just op, "/=") -> info{structure=I.SingleInstruction (I.Div{I.store=I.Variable var, I.lhs=I.Ref (I.Variable var), I.rhs=op}):s}
+            (_, _) -> info
+    buildStructureImpl (A.FunctionReturn Nothing) info@StructureInfo{structure=s}  = info{structure=I.SingleInstruction I.RetNone:s}
+
+
+    buildStructureImpl (A.FunctionReturn (Just c@A.FunctionCall{})) info@StructureInfo{structure=s} = case compileAssignment I.ReturnValue c of
+        Just instr -> info{structure=I.InstructionSequence instr:s}
+        _ -> info
+
+    buildStructureImpl (A.FunctionReturn (Just val)) info@StructureInfo{structure=s} = case convertData val of
+        Just value -> info{structure = I.SingleInstruction (I.Ret value):s}
+        _ -> info{structure=I.SingleInstruction I.RetNone:s}
+
+
+    buildStructureImpl (A.Sequence (A.VarDeclaration{A.name=n, A.assignment=a, A.typename=t}: xs)) info@StructureInfo{structure=s}
+        = mergeStructureInfo current next
+        where
+            current = info{structure=I.VariableScope{I.name=n, I.typename=t, I.assignment=[I.InstructionSequence (fromMaybe [] (compileAssignment (I.Variable n) a))], I.body=structure next} : s}
+            next = buildStructure  xs
+
+    buildStructureImpl (A.Sequence (A.ConstDeclaration{A.name=n, A.assignment=a, A.typename=t}: xs)) info@StructureInfo{structure=s}
+        = mergeStructureInfo current next
+        where
+            current = info{structure=I.ConstantScope{I.name=n, I.typename=t, I.assignment=[I.InstructionSequence (fromMaybe [] (compileAssignment (I.Variable n) a))], I.body=structure next} : s}
+            next = buildStructure  xs
+
+    buildStructureImpl (A.Sequence seq)  info@StructureInfo{structure=s} = mergeStructureInfo info (buildStructure seq)
+
+
+    buildStructureImpl A.RoutineDefinition {A.name=n, A.params=p, A.body=b} info@StructureInfo{exports=e,structure=s, ro=roValue, rw=rwValue}
+        = mergeStructureInfo info{exports= n : e, structure=I.Routine { I.name=n, I.params=paramNames, I.body= structure bodyResult}:s} bodyResult{structure=[]}
+            where
+                paramData =  mapMaybe convertData p
+                paramNames = mapMaybe (\case (I.Ref (I.Variable var)) -> Just var; _ -> Nothing) paramData
+                bodyResult = buildStructure b
+
+    buildStructureImpl A.FunctionDefinition {A.name=n, A.params=p, A.body=b} info@StructureInfo{exports=e,structure=s, ro=roValue, rw=rwValue}
+        = mergeStructureInfo info{exports=n:e, structure=I.Routine { I.name=n, I.params=paramNames, I.body= structure bodyResult} : s} bodyResult{structure=[]}
+            where
+                paramData =  mapMaybe convertData p
+                paramNames = mapMaybe (\case (I.Ref (I.Variable var)) -> Just var; _ -> Nothing) paramData
+                bodyResult = buildStructure b
+
+
+
+    buildStructureImpl A.FunctionCall{ A.target=funcName, A.params=[]} info@StructureInfo{exports=e,structure=s, ro=roValue, rw=rwValue}
+        = info{structure=I.SingleInstruction I.Call{ I.storeReturn = Nothing, I.routine=I.Label funcName, I.args=[]} : s}
+
+
+
+
+    buildStructureImpl A.IfStatement { A.condition = c, A.body=body, A.next= n} info@StructureInfo{exports=e,structure=s, ro=roValue, rw=rwValue} =
         case(c, n, ci) of
+            (A.Variable v, Just next, _) -> mergeStructureInfo info{structure=I.ConditionalBranch { I.condition=[I.SingleInstruction (I.Cmp { I.lhs=I.Ref (I.Variable v), I.rhs = I.BooleanValue True})], I.trueBranch=structure bInst, I.falseBranch=structure nInst } : s} nInst{structure=[]}
+            (A.Variable v, Nothing, _) -> info{structure=I.ConditionalBranch { I.condition=[I.SingleInstruction I.Cmp { I.lhs=I.Ref (I.Variable v), I.rhs = I.BooleanValue True}], I.trueBranch=structure bInst, I.falseBranch=[] } : s}
+            (A.BooleanLiteral True, Just next, _) -> mergeStructureInfo info bInst
+            (A.BooleanLiteral False, Just next, _) -> mergeStructureInfo info nInst
+            (A.BooleanLiteral False, Nothing, _) -> info
+            (_, Nothing, cinst) ->  mergeStructureInfo info{structure=I.ConditionalBranch { I.condition=cinst, I.trueBranch=structure bInst, I.falseBranch=[] } : s} bInst{structure=[]}
+            (_, _, cinst) ->  (mergeStructureInfo nInst{structure=[]} . mergeStructureInfo bInst{structure=[]}) info{structure=I.ConditionalBranch { I.condition=cinst, I.trueBranch=structure bInst, I.falseBranch= structure nInst } : s}
 
-            (A.Variable v, Just next, _) -> [I.ConditionalBranch { I.condition=[I.SingleInstruction (I.Cmp { I.lhs=I.Ref (I.Variable v), I.rhs = I.BooleanValue True})], I.trueBranch=bInst, I.falseBranch=buildStructure next }]
-            (A.Variable v, Nothing, _) -> [I.ConditionalBranch { I.condition=[I.SingleInstruction I.Cmp { I.lhs=I.Ref (I.Variable v), I.rhs = I.BooleanValue True}], I.trueBranch=bInst, I.falseBranch=[] }]
-            (A.BooleanLiteral True, Just next, _) -> bInst
-            (A.BooleanLiteral False, Just next, _) -> buildStructure next
-            (A.BooleanLiteral False, Nothing, _) -> []
-            (_, Just next, cinst) -> [I.ConditionalBranch { I.condition=cinst, I.trueBranch=bInst, I.falseBranch= buildStructure next }]
-            (_, _, cinst) -> [I.ConditionalBranch { I.condition=cinst, I.trueBranch=bInst, I.falseBranch=[] }]
         where
             ci = case compileIfCondition c of
                 Just [i] -> [I.SingleInstruction i]
                 Just ins -> [I.InstructionSequence ins]
                 _ -> []
 
-            bInst = buildStructure (A.Sequence body)
+            nInst = buildStructure (maybeToList  n)
+            bInst = buildStructure  body
 
-    buildStructure A.WhileStatement { A.condition=A.BooleanLiteral True, A.body=b} = [ I.InfiniteLoop{ I.body= buildStructure (A.Sequence b) } ]
+    buildStructureImpl A.WhileStatement { A.condition=A.BooleanLiteral True, A.body=b} info@StructureInfo{exports=e,structure=s, ro=roValue, rw=rwValue}
+        = mergeStructureInfo info{structure=I.InfiniteLoop{ I.body=structure body} : s} body{structure=[]}
+        where
+            body = buildStructure b
 
-    buildStructure A.WhileStatement { A.condition=c, A.body=b} = case compileIfCondition c of
-        Just [cInst] -> [ I.FiniteLoop {I.condition=[I.SingleInstruction cInst], I.body=buildStructure (A.Sequence b) } ]
-        Just cInst -> [ I.FiniteLoop {I.condition=[I.InstructionSequence cInst], I.body=buildStructure (A.Sequence b) } ]
-        Just [] -> [ I.InfiniteLoop { I.body=buildStructure (A.Sequence b) } ]
-        _ -> []
-    buildStructure A.Nop = []
 
-    buildStructure n = trace ("buildStructure failed -> " ++ show n) []
+    buildStructureImpl A.WhileStatement { A.condition=c, A.body=b} info@StructureInfo{exports=e,structure=s, ro=roValue, rw=rwValue}
+        = case compileIfCondition c of
+            Just [cInst] -> mergeStructureInfo info{structure=I.FiniteLoop {I.condition=[I.SingleInstruction cInst], I.body=structure bodyInfo}: s} bodyInfo{structure=[]}
+            Just [] -> mergeStructureInfo info{structure=I.InfiniteLoop { I.body=structure bodyInfo } : s} bodyInfo{structure=[]}
+            Just cInst -> mergeStructureInfo info{structure=I.FiniteLoop {I.condition=[I.InstructionSequence cInst], I.body=structure bodyInfo }: s} bodyInfo{structure=[]}
+            _ -> info
+        where
+            bodyInfo = buildStructure b
 
-    -- createStackFrames :: [ I.Structure ] -> [ I.Structure ]
-    -- createStackFrames = createStackFramesImpl [ ]
-
+    buildStructureImpl A.Nop info@StructureInfo{} = info
+    buildStructureImpl n info = trace ("[buildStructureImpl] failed ->" ++ show n) info
 
     getSPOffset :: String -> [ String ] -> Maybe Int
     getSPOffset = elemIndex
@@ -197,64 +249,6 @@ module IlCompiler(compile, compileOptimize, buildStructure) where
         Just off -> Just (I.StackPointerOffset off)
         Nothing -> Nothing
     varToSPOffset ref _ = Just ref
-
-
-
-
-
-    buildStack :: I.Structure -> I.Structure
-    buildStack = buildStackImpl []
-
-
-
-    mapVarToStack :: [String] -> I.Reference -> I.Reference
-
-    mapVarToStack stack (I.Variable var) = case offset of
-            Just o -> I.StackPointerOffset o
-            Nothing -> I.StackPointerOffset (-1)
-        where
-            offset = getSPOffset var stack
-    mapVarToStack _ ref = ref
-
-
-
-
-    buildStackImpl :: [String] -> I.Structure -> I.Structure
-    buildStackImpl stack rt@I.Routine{I.body=b} = rt{I.body= map stackFunc b}
-        where stackFunc = buildStackImpl stack
-    buildStackImpl stack rt@I.ConditionalBranch{I.condition=c, I.trueBranch=t, I.falseBranch=f} = rt{I.condition=map stackFunc c, I.trueBranch=map stackFunc t, I.falseBranch=map stackFunc f}
-        where stackFunc = buildStackImpl stack
-    buildStackImpl stack b@I.Branch{I.match=m} = b{I.match=stackFunc m}
-        where stackFunc = buildStackImpl stack
-    buildStackImpl stack l@I.FiniteLoop{I.condition=c, I.body=b} =  l{I.body=map stackFunc b, I.condition=map stackFunc c}
-        where
-            stackFunc = buildStackImpl stack
-
-
-
-    buildStackImpl stack l@I.InfiniteLoop{I.body=b} = l{I.body=map stackFunc b}
-        where stackFunc = buildStackImpl stack
-    buildStackImpl stack (I.Scope s) =  I.Scope (map stackFunc s)
-        where stackFunc = buildStackImpl stack
-    buildStackImpl stack vs@I.VariableScope{I.name=n, I.assignment=a, I.body=b} = (vs{I.assignment=map stackFunc a, I.body=map stackFunc b})
-        where stackFunc = buildStackImpl (n:stack)
-    buildStackImpl stack vs@I.ConstantScope{I.assignment=a, I.body=b} = (vs{I.assignment=map stackFunc a, I.body=map stackFunc b})
-        where stackFunc = buildStackImpl stack
-
-    -- buildStackImpl stack vs@I.ConstantScope{I.assignment=a, I.body=b} = (vs{I.assignment=map stackFunc a, I.body=map stackFunc b})
-    --     where stackFunc = buildStackImpl stack
-
-
-
-    buildStackImpl stack (I.InstructionSequence seq) =  (I.InstructionSequence . mapMaybe (I.mapInstructionRefs func)) seq
-        where
-            func = mapVarToStack stack
-            e = I.Error{I.name="Could not process instruction", I.body=[I.InstructionSequence seq]}
-
-    buildStackImpl stack (I.SingleInstruction inst) = maybe e  I.SingleInstruction (I.mapInstructionRefs func inst)
-        where
-            func = mapVarToStack stack
-            e = I.Error{I.name="Could not process instruction", I.body=[I.SingleInstruction inst]}
 
 
 
@@ -281,12 +275,12 @@ module IlCompiler(compile, compileOptimize, buildStructure) where
             (bodyI, bodyInst) = flattenStructureImpl (i+1) b
             (nextI, nextInst) = flattenStructureImpl bodyI xs
 
-    flattenStructureImpl i (I.Routine{I.name=n, I.body=b, I.params=p}: xs) = (nextI, (I.Lbl n : I.RoutineInit (map I.Variable p) : bInst) ++ (if isClosed then [] else[I.RetNone]) ++ nextInst)
+    flattenStructureImpl i (I.Routine{I.name=n, I.body=b, I.params=p}: xs) = (nextI, (I.Lbl n : I.RoutineInit (map I.Variable p) : bInst) ++ ([I.RetNone | not isClosed]) ++ nextInst)
         where
         (bI, bInst) =  flattenStructureImpl i b
         isClosed = case last bInst of I.RetNone -> True; I.Ret _ -> True; I.Call{I.storeReturn=Just I.ReturnValue} -> True; _ -> False
         (nextI, nextInst) = flattenStructureImpl bI xs
-
+    -- |
     flattenStructureImpl i (I.ConditionalBranch{I.condition=c, I.trueBranch=tb, I.falseBranch=fb} : xs) = case (tb, fb) of
         ([], []) -> (i, [])
         ([], fBranch) -> (nextI + 1, condtionInstr ++ [ I.BC { I.conditionType=I.Equal, I.target = I.Label ("endif_" ++ show i)}] ++ falseInst ++ [I.Lbl ("endif_" ++ show i)] ++ nextInst  )
@@ -297,10 +291,7 @@ module IlCompiler(compile, compileOptimize, buildStructure) where
             (trueI, trueInst) = flattenStructureImpl conditionI tb
             (falseI, falseInst) = flattenStructureImpl trueI fb
             (nextI, nextInst) = flattenStructureImpl falseI xs
-
-
-
-
+    
     flattenStructureImpl i [] = (i, [])
     flattenStructureImpl i (I.VariableScope {I.name=n, I.assignment=a, I.body=b} : xs) = trace ("[flattenStructureImpl, VariableScope.assignment] " ++ show assignmentInst) (i, assignmentInst ++ bodyInst ++ nextInst ++ [I.PopVar [I.Variable n]])
         where
@@ -311,15 +302,18 @@ module IlCompiler(compile, compileOptimize, buildStructure) where
     flattenStructureImpl i n = trace ("[flattenStructureImpl] Unknown pattern => " ++ show n) (i, [])
 
 
+    -- | 
+    flattenStructure :: StructureInfo -> I.ILDocument
+    flattenStructure StructureInfo{exports=e, ro=roData, rw=rwData , structure=s} = I.ILDocument{
+        I.exports=e,
+        I.ro=roData,
+        I.rw=rwData,
+        I.instructions= (I.InstructionList . snd . flattenStructureImpl 0) s
+    }
 
-    flattenStructure :: [ I.Structure ] -> [ I.Instruction ]
-    flattenStructure struct = res
-        where
-            (_, res) = flattenStructureImpl 0 struct
-
-
-    foldConditions :: [I.Instruction] -> [I.Instruction]
-    foldConditions = foldr foldRConditions []
+    -- | Fold conditions 
+    foldConditions :: I.ILDocument  -> I.ILDocument
+    foldConditions doc@I.ILDocument{I.instructions=I.InstructionList i} = doc{I.instructions= I.InstructionList (foldr foldRConditions [] i)}
 
 
     foldRConditions :: I.Instruction -> [I.Instruction] -> [I.Instruction]

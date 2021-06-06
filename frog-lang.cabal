@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 0d0328969c7c2a7280daedd1459df37d63df44787e34d416d1661a3fd5b03192
+-- hash: 7c7f014b8cea7c45fa5139f92be96b9551007a11c18e478995e3136b74d252ca
 
 name:           frog-lang
 version:        0.1.0.0
@@ -30,16 +30,13 @@ library
       Arm
       ArmCompiler
       Ast
-      Compiler
       Cpu
       Executor
       Il
       IlCompiler
       IlCpuOptimizer
-      IlMemory
       IlOptimizer
       Lexer
-      Lib
       ListTools
       Optimizer
       Parser

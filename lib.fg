@@ -1,5 +1,5 @@
 fn odd(n) {
-    if( n== 0) {
+    if(n == 0) {
         return false;
     }
     n--;
@@ -9,7 +9,7 @@ fn odd(n) {
 
 
 fn even(n) {
-    if(n== 0) {
+    if(n == 0) {
         return true;
     }
     n--;

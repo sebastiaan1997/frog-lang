@@ -132,30 +132,38 @@ lexIdentifier (x : xs) buffer | isSpace x || not(isAcceptableIdentifier x) = cas
 
 lexIdentifier (x : xs) buffer = lexIdentifier xs (buffer ++ [x])
 
-
-lexSLComment:: String -> String -> [FrogToken]
+-- | Lex a comment. Places a all characters after // and before \n
+lexSLComment:: String -> String -> [FrogToken] 
 lexSLComment ('\n': xs) buffer = SLComment buffer : lexFrog xs
 lexSLComment (x: xs) buffer = lexSLComment xs (buffer ++ [x])
-
+-- | Lex a multiline comment. Goes on until it finds */
 lexMLComment:: String -> String -> [FrogToken]
 lexMLComment ('*' : '/': xs) buffer = MLComment buffer : lexFrog xs
 lexMLComment (x : xs) buffer = lexMLComment xs (buffer ++ [x])
-
+-- | Lex a multiline doc comment. Goes on until it finds */
 lexDocComment :: String -> String -> [FrogToken]
 lexDocComment ('*' : '/': xs) buffer = MLComment buffer : lexFrog xs
 lexDocComment (x : xs) buffer = lexDocComment xs (buffer ++ [x])
-
+-- | Lexes a string into tokens
 lexFrog :: String -> [ FrogToken ]
+-- | If the input buffer is empty, return empty token buffer.
 lexFrog [] = []
+-- | Range operator
 lexFrog ('.' : '.' : xs) = Operator ".." : lexFrog xs
+-- | Acces operator
 lexFrog ('.' : xs) = Accessor "." : lexFrog xs
 
-
+-- | Detects single line comment, begins with //
 lexFrog ('/' : '/' : xs) = lexSLComment xs ""
+-- | Detects multi line documentation comment.
 lexFrog ('/' : '*' : '*' : xs) = lexDocComment xs ""
+-- | Detects multi line comment.
 lexFrog ('/' : '*' : xs) = lexMLComment xs ""
 
+-- | Detects a string
 lexFrog ('"' : xs) = lexString xs ""
+
+-- | General implementation for single character indicatiors
 lexFrog (x : xs)
     | isBlockOpen x =  BlockOpen x : lexFrog xs -- If the character is a block opening character, convert it to an block open token.
     | isBlockClose x  = BlockClose x : lexFrog xs -- If the character is a closing block character, convert it to a block close token.
@@ -164,7 +172,5 @@ lexFrog (x : xs)
     | isOperator x = lexOperator xs [x] -- If the character is an operator, try to read the rest of the operator.
     | isAcceptableIdentifier x = lexIdentifier (x : xs) "" -- If the character might be an identifier, try to read it as an identifier or keyword.
     | otherwise = Other x : lexFrog xs -- If no match is found, place it in the "other" bucket.
-
-
-lexFrog [] = [ Endf ]
+-- If it cannot place a character, return none.
 lexFrog list = [ None ]

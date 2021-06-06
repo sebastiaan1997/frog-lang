@@ -1,5 +1,5 @@
-module Arm(ArmRegister(..), Instruction(..), ArmInstructions(..), Data(..), registerIndex) where
-
+module Arm(ArmRegister(..), Instruction(..), ArmInstructions(..), Data(..), registerIndex, ArmDocument(..)) where
+    import qualified Data.Map as M
 
     -- | Datatypes for ARM processor
     data Data = IntegerValue Int -- Contains signed integer value
@@ -12,9 +12,9 @@ module Arm(ArmRegister(..), Instruction(..), ArmInstructions(..), Data(..), regi
         deriving ( Eq ) -- Implements equal operator.
 
     instance Show Data where
-        show (IntegerValue val) = '#' : show val 
+        show (IntegerValue val) = '#' : show val
         show (UnsignedIntegerValue val) = '#' : show val
-        show (LabelReference val) = '.' : show val
+        show (LabelReference val) = show val
 
 
 
@@ -37,9 +37,10 @@ module Arm(ArmRegister(..), Instruction(..), ArmInstructions(..), Data(..), regi
         | PC  -- Program Counter register
         deriving ( Eq, Show )
 
-    -- | Converts a ARM Register to a register index as defined by ARM.
+    -- |Converts a ARM Register to a register index as defined by ARM.
     registerIndex :: ArmRegister -> Int
-    registerIndex R0 = 0
+    -- |Converts R0 to 0 integer
+    registerIndex R0 = 0 
     registerIndex R1 = 1
     registerIndex R2 = 2
     registerIndex R3 = 3
@@ -62,7 +63,7 @@ module Arm(ArmRegister(..), Instruction(..), ArmInstructions(..), Data(..), regi
         | ADC   (ArmRegister, ArmRegister, ArmRegister) -- Add with carry, unsigned
         | ADD   (ArmRegister, ArmRegister, Either ArmRegister Data)     -- Add signed
         | ADDS  (ArmRegister, ArmRegister, Either ArmRegister Data)     -- Add unsigned
-        | ADR   (ArmRegister, String) 
+        | ADR   (ArmRegister, String)
         | ANDS  (ArmRegister, ArmRegister, ArmRegister)
         | ASRS  (ArmRegister, ArmRegister, Data)
         | B      String -- Unconditional branch, goto label in string
@@ -116,7 +117,7 @@ module Arm(ArmRegister(..), Instruction(..), ArmInstructions(..), Data(..), regi
         | WFI  -- | Wait For Interrupt
         deriving ( Eq )
 
-    -- Implements representation function for all ARM instructions
+    -- | Implements representation function for all ARM instructions
     instance Show Instruction where
         show (ADCS(res, lhs, rhs)) = "ADDCS " ++ show res ++ ", " ++ show lhs ++ ", " ++ show rhs
         show (ADC(res, lhs, rhs))  = "ADDC " ++ show res ++ ", " ++ show lhs ++ ", " ++ show rhs
@@ -124,17 +125,17 @@ module Arm(ArmRegister(..), Instruction(..), ArmInstructions(..), Data(..), regi
         show (ADD(rd, rn, Right imm))  = "ADD " ++ show rd ++ ", " ++ show rn ++ ", " ++ show imm
         show (ADDS(rd, rn, Left rm))  = "ADDS " ++ show rd ++ ", " ++ show rn ++ ", " ++ show rm
         show (ADDS(rd, rn, Right imm))  = "ADDS " ++ show rd ++ ", " ++ show rn ++ ", " ++ show imm
-        
+
         show (ADR(res, lbl))       = "ADR " ++ show res ++ ", " ++ lbl
         show (ANDS(res, lhs, rhs))  = "ANDS " ++ show res ++ ", " ++ show lhs ++ ", " ++ show rhs
         show (ASRS(res, lhs, rhs))  = "ANDS " ++ show res ++ ", " ++ show lhs ++ ", " ++ show rhs
         show (B lbl)  = "B " ++ lbl
-        show (BNE lbl) = "BNE ." ++ lbl
-        show (BEQ lbl) = "BEQ ." ++ lbl
-        show (BGT lbl) = "BGT ." ++ lbl
-        show (BLT lbl) = "BLT ." ++ lbl
-        show (BLE lbl) = "BLE ." ++ lbl
-        show (BGE lbl) = "BLE ." ++ lbl
+        show (BNE lbl) = "BNE " ++ lbl
+        show (BEQ lbl) = "BEQ " ++ lbl
+        show (BGT lbl) = "BGT " ++ lbl
+        show (BLT lbl) = "BLT " ++ lbl
+        show (BLE lbl) = "BLE " ++ lbl
+        show (BGE lbl) = "BLE " ++ lbl
         show (BICS (res, lhs, rhs)) = "BICS " ++ show res ++ ", " ++ show lhs ++ ", " ++ show rhs
         show BKPT = ""
         show (BL target) = "BL " ++ target
@@ -148,9 +149,9 @@ module Arm(ArmRegister(..), Instruction(..), ArmInstructions(..), Data(..), regi
         show DMB = "DMB"
         show DSB = "DSB"
         show (EORS  (res, lhs, rhs))     = "EORS " ++ show res ++ ", " ++ show lhs ++ ", " ++ show rhs
-        show (LDR (rt, Right (LabelReference lbl))) = "LDR " ++ show rt ++ ", ." ++ lbl
+        show (LDR (rt, Right (LabelReference lbl))) = "LDR " ++ show rt ++ ", " ++ lbl
         -- show (LDR (rt, Right lbl)) = "LDR " ++ show rt ++ ", ." ++ lbl
-        show (LDM   (res, registers)) = "LDM " ++ show res ++ "["  ++ registerList ++ "]"
+        show (LDM   (res, registers)) = "LDM " ++ show res ++ "{"  ++ registerList ++ "}"
             where
                 registerList = foldr (\lhs rhs -> ',' : show lhs ++ rhs) "" registers
 
@@ -162,10 +163,10 @@ module Arm(ArmRegister(..), Instruction(..), ArmInstructions(..), Data(..), regi
         show (MVNS (rd, rm)) = "MVNS " ++ show rd ++ ", " ++ show rm
         show Nop = "NOP"
         show (ORRS(rd, rn, rm)) = "ORRS " ++ show rd ++ ", " ++ show rn ++ ", " ++ show rm
-        show (POP regList) = "POP [" ++ tail regListRepr ++ "]"
+        show (POP regList) = "POP {" ++ tail regListRepr ++ "}"
             where
                 regListRepr = foldr (\lhs rhs -> ',' : show lhs ++ rhs) "" regList
-        show (PUSH regList) = "PUSH [" ++ tail regListRepr ++ "]"
+        show (PUSH regList) = "PUSH {" ++ tail regListRepr ++ "}"
             where
                 regListRepr = foldr (\lhs rhs -> ',' : show lhs ++ rhs) "" regList
         show (REV (rd, rm))  = "REV " ++ show rd ++ ", " ++ show rm
@@ -190,15 +191,27 @@ module Arm(ArmRegister(..), Instruction(..), ArmInstructions(..), Data(..), regi
         show (SXTB (rd, rm)) = "SXTB " ++ show rd ++ ", " ++ show rm
         show (SXTH (rd, rm)) = "SXTH " ++ show rd ++ ", " ++ show rm
         show (TST (rd, rm)) = "TST " ++ show rd ++ ", " ++ show rm
-        show (UXTB (rd, rm)) = "UXTB " ++ show rd ++ ", " ++ show rm  
-        show (UXTH (rd, rm)) = "UXTH " ++ show rd ++ ", " ++ show rm  
-        show WFE = "WFE" 
+        show (UXTB (rd, rm)) = "UXTB " ++ show rd ++ ", " ++ show rm
+        show (UXTH (rd, rm)) = "UXTH " ++ show rd ++ ", " ++ show rm
+        show WFE = "WFE"
         show WFI = "WFI"
 
-    -- | Contains ARM 
+    -- | Datatype that containst a sequence of ARM instructions and labels.
     newtype ArmInstructions = ArmInstructions [Either Instruction String]
     -- | Implements show function for ArmInstructions.
     instance Show ArmInstructions where
-        show (ArmInstructions instr) = foldl (\s i -> s ++ case i of Left i -> '\t' : show i ++ "\n"; Right lbl -> '.' : lbl ++ "\n")  [] instr
+        show (ArmInstructions instr) = foldl (\s i -> s ++ case i of Left i -> '\t' : show i ++ "\n"; Right lbl ->  lbl ++ ":\n")  [] instr
 
+    -- | ARM Document conainin 
+    data ArmDocument = ArmDocument {
+        exports :: [String],
+        ro :: M.Map String Data,
+        rw :: M.Map String Data,
+        instructions :: ArmInstructions
+    }
 
+    instance Show ArmDocument where
+        show ArmDocument{exports=e, instructions=i} =
+            ".cpu cortex-m0\n\n" ++
+            foldr (\l r-> ".global " ++ l ++ '\n' : r) "" e ++
+            "\n\n.text\n.align 2\n\n" ++ show i

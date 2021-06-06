@@ -4,8 +4,9 @@ rt main() {
     let condition = true;
     let i = 0;
     if(condition){
-        print_hello();
+        
         while (i < 254) {
+            print_hello();
             i++;
         }
     }
