@@ -135,7 +135,7 @@ module Arm(ArmRegister(..), Instruction(..), ArmInstructions(..), Data(..), regi
         show (BGT lbl) = "BGT " ++ lbl
         show (BLT lbl) = "BLT " ++ lbl
         show (BLE lbl) = "BLE " ++ lbl
-        show (BGE lbl) = "BLE " ++ lbl
+        show (BGE lbl) = "BGE " ++ lbl
         show (BICS (res, lhs, rhs)) = "BICS " ++ show res ++ ", " ++ show lhs ++ ", " ++ show rhs
         show BKPT = ""
         show (BL target) = "BL " ++ target

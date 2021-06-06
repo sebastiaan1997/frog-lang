@@ -82,13 +82,13 @@ module IlCompiler(compile, compileOptimize, buildStructure) where
     compileIfCondition (A.Variable var) = Just [ I.Cmp {I.lhs=I.Ref (I.Variable var), I.rhs=I.BooleanValue True} ]
     compileIfCondition A.InfixCall{A.lhs=A.Variable l, A.target=t, A.rhs=A.IntegerLiteral r} = Just [ I.CmpStmtNext {I.lhs=I.Ref (I.Variable l), I.rhs=I.IntegerValue r, I.conditionType=conditionType} ]
         where
-            conditionType = case t of
+            conditionType = I.invertCondition (case t of
                 "==" -> I.Equal
                 "!=" -> I.NotEqual
                 ">"  -> I.Greater
                 "<"  -> I.Lesser
                 ">="  -> I.GreaterEqual
-                "<="  -> I.LesserEqual
+                "<="  -> I.LesserEqual)
 
     compileIfCondition _ = Nothing
 
@@ -319,7 +319,7 @@ module IlCompiler(compile, compileOptimize, buildStructure) where
     foldRConditions :: I.Instruction -> [I.Instruction] -> [I.Instruction]
 
     foldRConditions I.CmpStmtNext{I.lhs=l, I.rhs=r, I.conditionType=cType} (b@I.B{} : xs) = I.Cmp{I.lhs=l, I.rhs=r} : b{I.conditionType=cType} : xs
-    foldRConditions I.CmpStmtNext{I.lhs=l, I.rhs=r, I.conditionType=cType} (b@I.BC{} : xs) = I.Cmp{I.lhs=l, I.rhs=r} : b : xs
+    foldRConditions I.CmpStmtNext{I.lhs=l, I.rhs=r, I.conditionType=cType} (b@I.BC{} : xs) = I.Cmp{I.lhs=l, I.rhs=r} : b{I.conditionType=cType} : xs
     foldRConditions I.CmpStmtNext{I.lhs=l, I.rhs=r, I.conditionType=cType} ((I.Jump jumpTarget) : xs) = I.Cmp{I.lhs=l, I.rhs=r} : I.BC{I.conditionType=cType, I.target=jumpTarget} : xs
 
 

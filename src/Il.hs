@@ -1,7 +1,7 @@
 
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..), InstructionList(..), mapInstructionsInStructure, Register(..), mapInstructionListRefs, mapInstructionRefs, extractInstructionData, replaceInstructionData, dataRef, dataRefPayload, mapInstructionRefPayload, ILDocument(..)) where
+module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..), InstructionList(..), mapInstructionsInStructure, Register(..), mapInstructionListRefs, mapInstructionRefs, extractInstructionData, replaceInstructionData, dataRef, dataRefPayload, mapInstructionRefPayload, ILDocument(..), invertCondition) where
 
     import Numeric (showHex)
     import qualified Data.Data as D
@@ -250,6 +250,16 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
         | Undefined -- Branch condition is undefined, undefined behavriour 
         deriving ( Eq, Show, D.Data )
 
+    invertCondition :: BranchType -> BranchType
+    invertCondition Greater = LesserEqual
+    invertCondition GreaterEqual = Lesser
+    invertCondition Lesser = GreaterEqual
+    invertCondition LesserEqual = Greater
+    invertCondition Equal = NotEqual
+    invertCondition NotEqual = Equal
+
+    invertCondition x = x
+
     data Structure = SingleInstruction Instruction -- Represents a single instruction
         | InstructionSequence [ Instruction ] -- Represents multiple registers.
         | Routine { name :: String, body :: [Structure], params :: [ String ] } -- Represents a routine.
@@ -283,6 +293,7 @@ module Il(Reference(..), Data(..), Instruction(..), BranchType(..), Structure(..
                 SingleInstruction si -> SingleInstruction (func si)
                 InstructionSequence is -> InstructionSequence (map func is)
                 other -> other
+    
 
 
 
